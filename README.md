@@ -1,11 +1,11 @@
 <div align="center">
 
-# exprz
+# ExprZ
 
 [![Workflow Status](https://img.shields.io/github/workflow/status/qdeduction/exprz/main?label=workflow&style=flat-square)](https://github.com/qdeduction/exprz/actions)
 [![Latest Version](https://img.shields.io/crates/v/exprz.svg?style=flat-square)](https://crates.io/crates/exprz)
 
-_an expression library_
+_An Expression Library_
 
 </div>
 

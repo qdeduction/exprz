@@ -1,5 +1,5 @@
 [package]
-name = "exprz"
+name = "exprz-core"
 version = "0.0.0"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
@@ -10,7 +10,7 @@ readme = "README.md"
 license = "ISC"
 keywords = ["expressions"]
 categories = [""]
-description = "an expression library"
+description = "exprz core library"
 exclude = [""]
 publish = false
 
@@ -18,7 +18,4 @@ publish = false
 is-it-maintained-issue-resolution = { repository = "qdeduction/exprz" }
 is-it-maintained-open-issues = { repository = "qdeduction/exprz" }
 maintenance = { status = "actively-developed" }
-
-[dependencies]
-exprz-core = { path = "core" }
 
