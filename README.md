@@ -9,6 +9,31 @@ _An Expression Library_
 
 </div>
 
+## Getting Started
+
+For more information on how to use ExprZ, see the [project page](https://crates.io/crates/exprz) or the [documentation](https://docs.rs/exprz).
+
+## Installation
+
+To use ExprZ in your project add the following to your `Cargo.toml`,
+
+```toml
+[dependencies]
+exprz = "0.0.0"
+```
+
+or run the following on the command line
+
+```sh
+cargo add exprz
+```
+
+if you have [`cargo-add`](https://github.com/killercup/cargo-edit) installed.
+
+## License
+
+This project is licensed under the [ISC License](https://opensource.org/licenses/ISC). See [LICENSE](LICENSE) for more information.
+
 ---
 <div align="center">
 
