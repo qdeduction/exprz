@@ -3,7 +3,9 @@
 
 //! an expression library
 
-use core::{borrow::Borrow, iter::FromIterator};
+#![no_std]
+
+use core::iter::FromIterator;
 
 ///
 ///
@@ -22,11 +24,11 @@ pub trait RefIterator<T> {
 pub trait IntoRefIterator<T> {
     ///
     ///
-    type IntoRefIter: RefIterator<T>;
+    type RefIter: RefIterator<T>;
 
     ///
     ///
-    fn ref_iter(&self) -> Self::IntoRefIter;
+    fn ref_iter(&self) -> Self::RefIter;
 }
 
 /// Expression Tree
@@ -88,8 +90,8 @@ where
     ///
     ///
     fn eq_group<L, R>(
-        lhs: <L::Group as IntoRefIterator<L>>::IntoRefIter,
-        rhs: <R::Group as IntoRefIterator<R>>::IntoRefIter,
+        lhs: <L::Group as IntoRefIterator<L>>::RefIter,
+        rhs: <R::Group as IntoRefIterator<R>>::RefIter,
     ) -> bool
     where
         L: Expression,
@@ -169,36 +171,22 @@ where
     {
         match self.cases() {
             ExprRef::Atom(atom) => piecewise_map(atom, iter.iter())
-                .map(Expression::clone)
-                .unwrap_or_else(move || Self::from_atom(atom.clone())),
+                .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone),
             ExprRef::Group(group) => {
                 Self::from_group(group.iter().map(move |e| e.substitute_ref(iter)).collect())
             }
         }
     }
-
-    ///
-    ///
-    fn substitute_mut<'s, I>(&mut self, iter: &I)
-    where
-        Self: 's,
-        Self::Atom: PartialEq + Clone,
-        Self::Group: FromIterator<Self>,
-        I: RefIterator<(&'s Self::Atom, &'s Self)>,
-    {
-        *self = self.substitute_ref(iter)
-    }
 }
 
-fn piecewise_map<T, A, B, I>(t: &T, iter: I) -> Option<B>
+fn piecewise_map<T, A, B, I>(t: T, iter: I) -> Option<B>
 where
-    T: PartialEq,
-    A: Borrow<T>,
+    T: PartialEq<A>,
     I: IntoIterator<Item = (A, B)>,
 {
+    // TODO: replace `find_map` body with `(t == a).then_some(b)` from nightly
     iter.into_iter()
-        .find(|(a, _)| t == a.borrow())
-        .map(move |(_, b)| b)
+        .find_map(move |(a, b)| if t == a { Some(b) } else { None })
 }
 
 ///
@@ -213,7 +201,7 @@ where
 
     ///
     ///
-    Group(<E::Group as IntoRefIterator<E>>::IntoRefIter),
+    Group(<E::Group as IntoRefIterator<E>>::RefIter),
 }
 
 impl<'e, E> ExprRef<'e, E>
@@ -251,7 +239,7 @@ where
     ///
     #[must_use]
     #[inline]
-    pub fn group(self) -> Option<<E::Group as IntoRefIterator<E>>::IntoRefIter> {
+    pub fn group(self) -> Option<<E::Group as IntoRefIterator<E>>::RefIter> {
         match self {
             ExprRef::Group(group) => Some(group),
             _ => None,
@@ -268,7 +256,7 @@ where
     ///
     ///
     #[inline]
-    pub fn unwrap_group(self) -> <E::Group as IntoRefIterator<E>>::IntoRefIter {
+    pub fn unwrap_group(self) -> <E::Group as IntoRefIterator<E>>::RefIter {
         self.group().unwrap()
     }
 }
@@ -341,29 +329,88 @@ where
     }
 }
 
-impl<E> Expr<E> where E: Expression {}
+impl<E> Expr<E>
+where
+    E: Expression,
+{
+    ///
+    ///
+    #[must_use]
+    #[inline]
+    pub fn is_atom(&self) -> bool {
+        matches!(self, Expr::Atom(_))
+    }
 
+    ///
+    ///
+    #[must_use]
+    #[inline]
+    pub fn is_group(&self) -> bool {
+        matches!(self, Expr::Group(_))
+    }
+
+    ///
+    ///
+    #[must_use]
+    #[inline]
+    pub fn atom(self) -> Option<E::Atom> {
+        match self {
+            Expr::Atom(atom) => Some(atom),
+            _ => None,
+        }
+    }
+
+    ///
+    ///
+    #[must_use]
+    #[inline]
+    pub fn group(self) -> Option<E::Group> {
+        match self {
+            Expr::Group(group) => Some(group),
+            _ => None,
+        }
+    }
+
+    ///
+    ///
+    #[inline]
+    pub fn unwrap_atom(self) -> E::Atom {
+        self.atom().unwrap()
+    }
+
+    ///
+    ///
+    #[inline]
+    pub fn unwrap_group(self) -> E::Group {
+        self.group().unwrap()
+    }
+}
+
+///
+///
 pub struct ExprRefIterContainer<E>
 where
     E: Expression,
 {
-    pub iter: <E::Group as IntoRefIterator<E>>::IntoRefIter,
+    iter: <E::Group as IntoRefIterator<E>>::RefIter,
 }
 
+///
+///
 pub struct ExprRefIter<E>
 where
     E: Expression,
 {
-    pub iter: <<E::Group as IntoRefIterator<E>>::IntoRefIter as RefIterator<E>>::Iter,
+    iter: <<E::Group as IntoRefIterator<E>>::RefIter as RefIterator<E>>::Iter,
 }
 
 impl<E> IntoRefIterator<Expr<E>> for E::Group
 where
     E: Expression,
 {
-    type IntoRefIter = ExprRefIterContainer<E>;
+    type RefIter = ExprRefIterContainer<E>;
 
-    fn ref_iter(&self) -> Self::IntoRefIter {
+    fn ref_iter(&self) -> Self::RefIter {
         ExprRefIterContainer {
             iter: self.ref_iter(),
         }
