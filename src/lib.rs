@@ -3,7 +3,7 @@
 
 //! an expression library
 
-use core::iter::FromIterator;
+use core::{borrow::Borrow, iter::FromIterator};
 
 ///
 ///
@@ -145,8 +145,9 @@ where
         I: RefIterator<(&'s Self::Atom, Self)>,
     {
         match self.into() {
-            Expr::Atom(atom) => maybe_substitute_on_atoms(&atom, iter.iter())
-                .unwrap_or_else(move || Self::from_atom(atom)),
+            Expr::Atom(atom) => {
+                piecewise_map(&atom, iter.iter()).unwrap_or_else(move || Self::from_atom(atom))
+            }
             Expr::Group(group) => Self::from_group(
                 group
                     .ref_iter()
@@ -161,12 +162,14 @@ where
     ///
     fn substitute_ref<'s, I>(&self, iter: &I) -> Self
     where
-        Self::Atom: 's + PartialEq + Clone,
+        Self: 's,
+        Self::Atom: PartialEq + Clone,
         Self::Group: FromIterator<Self>,
-        I: RefIterator<(&'s Self::Atom, Self)>,
+        I: RefIterator<(&'s Self::Atom, &'s Self)>,
     {
         match self.cases() {
-            ExprRef::Atom(atom) => maybe_substitute_on_atoms(atom, iter.iter())
+            ExprRef::Atom(atom) => piecewise_map(atom, iter.iter())
+                .map(Expression::clone)
                 .unwrap_or_else(move || Self::from_atom(atom.clone())),
             ExprRef::Group(group) => {
                 Self::from_group(group.iter().map(move |e| e.substitute_ref(iter)).collect())
@@ -178,23 +181,24 @@ where
     ///
     fn substitute_mut<'s, I>(&mut self, iter: &I)
     where
-        Self::Atom: 's + PartialEq + Clone,
+        Self: 's,
+        Self::Atom: PartialEq + Clone,
         Self::Group: FromIterator<Self>,
-        I: RefIterator<(&'s Self::Atom, Self)>,
+        I: RefIterator<(&'s Self::Atom, &'s Self)>,
     {
         *self = self.substitute_ref(iter)
     }
 }
 
-fn maybe_substitute_on_atoms<'s, E, I>(atom: &E::Atom, iter: I) -> Option<E>
+fn piecewise_map<T, A, B, I>(t: &T, iter: I) -> Option<B>
 where
-    E: Expression,
-    E::Atom: 's + PartialEq,
-    I: IntoIterator<Item = (&'s E::Atom, E)>,
+    T: PartialEq,
+    A: Borrow<T>,
+    I: IntoIterator<Item = (A, B)>,
 {
     iter.into_iter()
-        .find(|(a, _)| *a == atom)
-        .map(move |(_, t)| t)
+        .find(|(a, _)| t == a.borrow())
+        .map(move |(_, b)| b)
 }
 
 ///
