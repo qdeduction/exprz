@@ -19,5 +19,5 @@ is-it-maintained-open-issues = { repository = "qdeduction/exprz" }
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-exprz-core = { path = "core" }
+exprz-core = "0.0.0"
 
