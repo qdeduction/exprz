@@ -5,31 +5,7 @@
 
 #![no_std]
 
-use core::iter::FromIterator;
-
-///
-///
-pub trait RefIterator<T> {
-    ///
-    ///
-    type Iter: Iterator<Item = T>;
-
-    ///
-    ///
-    fn iter(&self) -> Self::Iter;
-}
-
-///
-///
-pub trait IntoRefIterator<T> {
-    ///
-    ///
-    type RefIter: RefIterator<T>;
-
-    ///
-    ///
-    fn ref_iter(&self) -> Self::RefIter;
-}
+use {crate::iter::*, core::iter::FromIterator};
 
 /// Expression Tree
 pub trait Expression
@@ -55,6 +31,7 @@ where
     /// Convert from [canonical enumeration]
     ///
     /// [canonical enumeration]: enum.Expr.html
+    #[inline]
     fn from_expr(expr: Expr<Self>) -> Self {
         match expr {
             Expr::Atom(atom) => Self::from_atom(atom),
@@ -82,37 +59,10 @@ where
     {
         match (self.cases(), other.cases()) {
             (ExprRef::Atom(lhs), ExprRef::Atom(rhs)) => lhs == rhs,
-            (ExprRef::Group(lhs), ExprRef::Group(rhs)) => Self::eq_group::<Self, Rhs>(lhs, rhs),
-            _ => false,
-        }
-    }
-
-    ///
-    ///
-    fn eq_group<L, R>(
-        lhs: <L::Group as IntoRefIterator<L>>::RefIter,
-        rhs: <R::Group as IntoRefIterator<R>>::RefIter,
-    ) -> bool
-    where
-        L: Expression,
-        R: Expression,
-        L::Atom: PartialEq<R::Atom>,
-    {
-        let mut lhs = lhs.iter();
-        let mut rhs = rhs.iter();
-        loop {
-            // FIXME: use nightly `eq_by`
-            let x = match lhs.next() {
-                None => return rhs.next().is_none(),
-                Some(val) => val,
-            };
-            let y = match rhs.next() {
-                None => return false,
-                Some(val) => val,
-            };
-            if !x.eq(&y) {
-                return false;
+            (ExprRef::Group(lhs), ExprRef::Group(rhs)) => {
+                eq_by(lhs.iter(), rhs.iter(), |l, r| l.eq(&r))
             }
+            _ => false,
         }
     }
 
@@ -132,7 +82,7 @@ where
                 ExprRef::Atom(_) => false,
                 ExprRef::Group(other) => {
                     other.iter().any(move |e| self.is_subexpression(&e))
-                        || Self::eq_group::<Self, Rhs>(group, other)
+                        || eq_by(group.iter(), other.iter(), |l, r| l.eq(&r))
                 }
             },
         }
@@ -147,9 +97,8 @@ where
         I: RefIterator<(&'s Self::Atom, Self)>,
     {
         match self.into() {
-            Expr::Atom(atom) => {
-                piecewise_map(&atom, iter.iter()).unwrap_or_else(move || Self::from_atom(atom))
-            }
+            Expr::Atom(atom) => util::piecewise_map(&atom, iter.iter())
+                .unwrap_or_else(move || Self::from_atom(atom)),
             Expr::Group(group) => Self::from_group(
                 group
                     .ref_iter()
@@ -170,23 +119,13 @@ where
         I: RefIterator<(&'s Self::Atom, &'s Self)>,
     {
         match self.cases() {
-            ExprRef::Atom(atom) => piecewise_map(atom, iter.iter())
+            ExprRef::Atom(atom) => util::piecewise_map(atom, iter.iter())
                 .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone),
             ExprRef::Group(group) => {
                 Self::from_group(group.iter().map(move |e| e.substitute_ref(iter)).collect())
             }
         }
     }
-}
-
-fn piecewise_map<T, A, B, I>(t: T, iter: I) -> Option<B>
-where
-    T: PartialEq<A>,
-    I: IntoIterator<Item = (A, B)>,
-{
-    // TODO: replace `find_map` body with `(t == a).then_some(b)` from nightly
-    iter.into_iter()
-        .find_map(move |(a, b)| if t == a { Some(b) } else { None })
 }
 
 ///
@@ -309,10 +248,11 @@ where
 
     type Group = E::Group;
 
+    #[inline]
     fn cases(&self) -> ExprRef<Self> {
         match self {
             Self::Atom(atom) => ExprRef::Atom(atom),
-            Self::Group(group) => ExprRef::Group(ExprRefIterContainer {
+            Self::Group(group) => ExprRef::Group(ExprIterContainer {
                 iter: group.ref_iter(),
             }),
         }
@@ -388,7 +328,7 @@ where
 
 ///
 ///
-pub struct ExprRefIterContainer<E>
+pub struct ExprIterContainer<E>
 where
     E: Expression,
 {
@@ -397,7 +337,7 @@ where
 
 ///
 ///
-pub struct ExprRefIter<E>
+pub struct ExprIter<E>
 where
     E: Expression,
 {
@@ -408,35 +348,107 @@ impl<E> IntoRefIterator<Expr<E>> for E::Group
 where
     E: Expression,
 {
-    type RefIter = ExprRefIterContainer<E>;
+    type RefIter = ExprIterContainer<E>;
 
+    #[inline]
     fn ref_iter(&self) -> Self::RefIter {
-        ExprRefIterContainer {
+        ExprIterContainer {
             iter: self.ref_iter(),
         }
     }
 }
 
-impl<E> RefIterator<Expr<E>> for ExprRefIterContainer<E>
+impl<E> RefIterator<Expr<E>> for ExprIterContainer<E>
 where
     E: Expression,
 {
-    type Iter = ExprRefIter<E>;
+    type Iter = ExprIter<E>;
 
+    #[inline]
     fn iter(&self) -> Self::Iter {
-        ExprRefIter {
+        ExprIter {
             iter: self.iter.iter(),
         }
     }
 }
 
-impl<E> Iterator for ExprRefIter<E>
+impl<E> Iterator for ExprIter<E>
 where
     E: Expression,
 {
     type Item = Expr<E>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(E::into)
+    }
+}
+
+/// Iterator Module
+pub mod iter {
+    ///
+    ///
+    pub trait RefIterator<T> {
+        ///
+        ///
+        type Iter: Iterator<Item = T>;
+
+        ///
+        ///
+        fn iter(&self) -> Self::Iter;
+    }
+
+    ///
+    ///
+    pub trait IntoRefIterator<T> {
+        ///
+        ///
+        type RefIter: RefIterator<T>;
+
+        ///
+        ///
+        fn ref_iter(&self) -> Self::RefIter;
+    }
+
+    /// Check if iterators are equal pointwise using given `eq` function.
+    ///
+    /// TODO: when the nightly `iter_order_by` (issue #64295) is resolved, switch to that
+    pub(crate) fn eq_by<L, R, F>(lhs: L, rhs: R, mut eq: F) -> bool
+    where
+        L: IntoIterator,
+        R: IntoIterator,
+        F: FnMut(L::Item, R::Item) -> bool,
+    {
+        let mut lhs = lhs.into_iter();
+        let mut rhs = rhs.into_iter();
+        loop {
+            let x = match lhs.next() {
+                None => return rhs.next().is_none(),
+                Some(val) => val,
+            };
+            let y = match rhs.next() {
+                None => return false,
+                Some(val) => val,
+            };
+            if !eq(x, y) {
+                return false;
+            }
+        }
+    }
+}
+
+/// Utilities Module
+pub mod util {
+    ///
+    ///
+    #[inline]
+    pub fn piecewise_map<T, A, B, I>(t: T, iter: I) -> Option<B>
+    where
+        T: PartialEq<A>,
+        I: IntoIterator<Item = (A, B)>,
+    {
+        // TODO: replace `find_map` body with `(t == a).then_some(b)` from nightly
+        iter.into_iter()
+            .find_map(move |(a, b)| if t == a { Some(b) } else { None })
     }
 }
