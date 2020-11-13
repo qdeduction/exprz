@@ -16,10 +16,9 @@ where
     type Atom;
 
     /// Group expression type
-    type Group: IntoRefIterator<Self>;
+    type Group: IntoIteratorGen<Self>;
 
-    ///
-    ///
+    /// Get a reference to the underlying `Expression` type.
     fn cases(&self) -> ExprRef<Self>;
 
     /// Build an `Expression` from an atomic element.
@@ -28,7 +27,7 @@ where
     /// Build an `Expression` from a grouped expression.
     fn from_group(group: Self::Group) -> Self;
 
-    /// Convert from [canonical enumeration]
+    /// Convert from the [canonical enumeration].
     ///
     /// [canonical enumeration]: enum.Expr.html
     #[inline]
@@ -37,6 +36,48 @@ where
             Expr::Atom(atom) => Self::from_atom(atom),
             Expr::Group(group) => Self::from_group(group),
         }
+    }
+
+    /// Check if the `Expression` is atomic.
+    #[must_use]
+    #[inline]
+    fn is_atom(&self) -> bool {
+        self.cases().is_atom()
+    }
+
+    /// Check if the `Expression` is a grouped expression.
+    #[must_use]
+    #[inline]
+    fn is_group(&self) -> bool {
+        self.cases().is_group()
+    }
+
+    /// Converts from an `Expression` to an `Option<E::Atom>`.
+    #[must_use]
+    #[inline]
+    fn atom(self) -> Option<Self::Atom> {
+        self.into().atom()
+    }
+
+    /// Converts from an `Expression` to an `Option<E::Group>`.
+    #[must_use]
+    #[inline]
+    fn group(self) -> Option<Self::Group> {
+        self.into().group()
+    }
+
+    /// Returns the contained `Atom` value, consuming the `self` value.
+    #[inline]
+    #[track_caller]
+    fn unwrap_atom(self) -> Self::Atom {
+        self.into().unwrap_atom()
+    }
+
+    /// Returns the contained `Group` value, consuming the `self` value.
+    #[inline]
+    #[track_caller]
+    fn unwrap_group(self) -> Self::Group {
+        self.into().unwrap_group()
     }
 
     /// Clone an `Expression` that has `Clone`-able `Atom`s.
@@ -50,10 +91,10 @@ where
     }
 
     /// Check if two `Expression`s are equal using `PartialEq` on their `Atom`s.
-    fn eq<Rhs>(&self, other: &Rhs) -> bool
+    fn eq<E>(&self, other: &E) -> bool
     where
-        Rhs: Expression,
-        Self::Atom: PartialEq<Rhs::Atom>,
+        E: Expression,
+        Self::Atom: PartialEq<E::Atom>,
     {
         match (self.cases(), other.cases()) {
             (ExprRef::Atom(lhs), ExprRef::Atom(rhs)) => lhs == rhs,
@@ -66,10 +107,10 @@ where
 
     /// Check if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
     /// `Atom`s.
-    fn is_subexpression<Rhs>(&self, other: &Rhs) -> bool
+    fn is_subexpression<E>(&self, other: &E) -> bool
     where
-        Rhs: Expression,
-        Self::Atom: PartialEq<Rhs::Atom>,
+        E: Expression,
+        Self::Atom: PartialEq<E::Atom>,
     {
         match self.cases() {
             ExprRef::Atom(atom) => match other.cases() {
@@ -86,22 +127,37 @@ where
         }
     }
 
-    ///
-    ///
-    fn substitute<'s, I>(self, iter: &I) -> Self
+    /// Extend a function on `Atom`s to a function on `Expression`s.
+    fn map<E, F>(self, f: &mut F) -> E
     where
-        Self::Atom: 's + PartialEq,
-        Self::Group: FromIterator<Self>,
-        I: RefIterator<(&'s Self::Atom, Self)>,
+        E: Expression,
+        E::Group: FromIterator<E>,
+        F: FnMut(Self::Atom) -> E::Atom,
     {
-        self.substitute_by(&mut move |atom| {
-            util::piecewise_map(&atom, iter.iter()).unwrap_or_else(move || Self::from_atom(atom))
-        })
+        match self.into() {
+            Expr::Atom(atom) => E::from_atom(f(atom)),
+            Expr::Group(group) => E::from_group(group.new_iter().map(move |e| e.map(f)).collect()),
+        }
+    }
+
+    /// Extend a function on `&Atom`s to a function on `&Expression`s.
+    fn map_ref<E, F>(&self, f: &mut F) -> E
+    where
+        E: Expression,
+        E::Group: FromIterator<E>,
+        F: FnMut(&Self::Atom) -> E::Atom,
+    {
+        match self.cases() {
+            ExprRef::Atom(atom) => E::from_atom(f(atom)),
+            ExprRef::Group(group) => {
+                E::from_group(group.iter().map(move |e| e.map_ref(f)).collect())
+            }
+        }
     }
 
     ///
     ///
-    fn substitute_by<F>(self, f: &mut F) -> Self
+    fn substitute<F>(self, f: &mut F) -> Self
     where
         Self::Group: FromIterator<Self>,
         F: FnMut(Self::Atom) -> Self,
@@ -109,29 +165,27 @@ where
         match self.into() {
             Expr::Atom(atom) => f(atom),
             Expr::Group(group) => {
-                Self::from_group(group.get_iter().map(move |e| e.substitute_by(f)).collect())
+                Self::from_group(group.new_iter().map(move |e| e.substitute(f)).collect())
             }
         }
     }
 
     ///
     ///
-    fn substitute_ref<'s, I>(&self, iter: &I) -> Self
+    fn substitute_with_iter<'s, I>(self, iter: &I) -> Self
     where
-        Self: 's,
-        Self::Atom: PartialEq + Clone,
+        Self::Atom: 's + PartialEq,
         Self::Group: FromIterator<Self>,
-        I: RefIterator<(&'s Self::Atom, &'s Self)>,
+        I: IteratorGen<(&'s Self::Atom, Self)>,
     {
-        self.substitute_ref_by(&mut move |atom| {
-            util::piecewise_map(atom, iter.iter())
-                .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone)
+        self.substitute(&mut move |atom| {
+            util::piecewise_map(&atom, iter.iter()).unwrap_or_else(move || Self::from_atom(atom))
         })
     }
 
     ///
     ///
-    fn substitute_ref_by<F>(&self, f: &mut F) -> Self
+    fn substitute_ref<F>(&self, f: &mut F) -> Self
     where
         Self::Group: FromIterator<Self>,
         F: FnMut(&Self::Atom) -> Self,
@@ -139,49 +193,58 @@ where
         match self.cases() {
             ExprRef::Atom(atom) => f(atom),
             ExprRef::Group(group) => {
-                Self::from_group(group.iter().map(move |e| e.substitute_ref_by(f)).collect())
+                Self::from_group(group.iter().map(move |e| e.substitute_ref(f)).collect())
             }
         }
     }
+
+    ///
+    ///
+    fn substitute_ref_with_iter<'s, I>(&self, iter: &I) -> Self
+    where
+        Self: 's,
+        Self::Atom: PartialEq + Clone,
+        Self::Group: FromIterator<Self>,
+        I: IteratorGen<(&'s Self::Atom, &'s Self)>,
+    {
+        self.substitute_ref(&mut move |atom| {
+            util::piecewise_map(atom, iter.iter())
+                .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone)
+        })
+    }
 }
 
-///
-///
+/// Internal Reference to an `Expression` Type
 pub enum ExprRef<'e, E>
 where
     E: Expression,
 {
-    ///
-    ///
+    /// Reference to an atomic expression
     Atom(&'e E::Atom),
 
-    ///
-    ///
-    Group(<E::Group as IntoRefIterator<E>>::RefIter),
+    /// Grouped expression `IteratorGen`
+    Group(<E::Group as IntoIteratorGen<E>>::IterGen),
 }
 
 impl<'e, E> ExprRef<'e, E>
 where
     E: Expression,
 {
-    ///
-    ///
+    /// Check if the `ExprRef` is atomic.
     #[must_use]
     #[inline]
     pub fn is_atom(&self) -> bool {
         matches!(self, ExprRef::Atom(_))
     }
 
-    ///
-    ///
+    /// Check if the `ExprRef` is a grouped expression `IteratorGen`.
     #[must_use]
     #[inline]
     pub fn is_group(&self) -> bool {
         matches!(self, ExprRef::Group(_))
     }
 
-    ///
-    ///
+    /// Converts from an `ExprRef<E>` to an `Option<&E::Atom>`.
     #[must_use]
     #[inline]
     pub fn atom(self) -> Option<&'e E::Atom> {
@@ -191,33 +254,32 @@ where
         }
     }
 
-    ///
-    ///
+    /// Converts from an `ExprRef<E>` to an `Option<E::Group::IterGen>`.
     #[must_use]
     #[inline]
-    pub fn group(self) -> Option<<E::Group as IntoRefIterator<E>>::RefIter> {
+    pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E>>::IterGen> {
         match self {
             ExprRef::Group(group) => Some(group),
             _ => None,
         }
     }
 
-    ///
-    ///
+    /// Returns the contained `Atom` value, consuming the `self` value.
     #[inline]
+    #[track_caller]
     pub fn unwrap_atom(self) -> &'e E::Atom {
         self.atom().unwrap()
     }
 
-    ///
-    ///
+    /// Returns the contained `Group` value, consuming the `self` value.
     #[inline]
-    pub fn unwrap_group(self) -> <E::Group as IntoRefIterator<E>>::RefIter {
+    #[track_caller]
+    pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E>>::IterGen {
         self.group().unwrap()
     }
 }
 
-/// Canonical Concrete Expression Type
+/// Canonical Concrete `Expression` Type
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Expr<E>
 where
@@ -269,9 +331,7 @@ where
     fn cases(&self) -> ExprRef<Self> {
         match self {
             Self::Atom(atom) => ExprRef::Atom(atom),
-            Self::Group(group) => ExprRef::Group(ExprIterContainer {
-                iter: group.ref_iter(),
-            }),
+            Self::Group(group) => ExprRef::Group(ExprIterContainer { iter: group.gen() }),
         }
     }
 
@@ -290,24 +350,21 @@ impl<E> Expr<E>
 where
     E: Expression,
 {
-    ///
-    ///
+    /// Check if the `Expr` is atomic.
     #[must_use]
     #[inline]
     pub fn is_atom(&self) -> bool {
         matches!(self, Expr::Atom(_))
     }
 
-    ///
-    ///
+    /// Check if the `Expr` is a grouped expression.
     #[must_use]
     #[inline]
     pub fn is_group(&self) -> bool {
         matches!(self, Expr::Group(_))
     }
 
-    ///
-    ///
+    /// Converts from an `Expr<E>` to an `Option<E::Atom>`.
     #[must_use]
     #[inline]
     pub fn atom(self) -> Option<E::Atom> {
@@ -317,8 +374,7 @@ where
         }
     }
 
-    ///
-    ///
+    /// Converts from an `Expr<E>` to an `Option<E::Group>`.
     #[must_use]
     #[inline]
     pub fn group(self) -> Option<E::Group> {
@@ -328,16 +384,16 @@ where
         }
     }
 
-    ///
-    ///
+    /// Returns the contained `Atom` value, consuming the `self` value.
     #[inline]
+    #[track_caller]
     pub fn unwrap_atom(self) -> E::Atom {
         self.atom().unwrap()
     }
 
-    ///
-    ///
+    /// Returns the contained `Group` value, consuming the `self` value.
     #[inline]
+    #[track_caller]
     pub fn unwrap_group(self) -> E::Group {
         self.group().unwrap()
     }
@@ -349,7 +405,7 @@ pub struct ExprIterContainer<E>
 where
     E: Expression,
 {
-    iter: <E::Group as IntoRefIterator<E>>::RefIter,
+    iter: <E::Group as IntoIteratorGen<E>>::IterGen,
 }
 
 ///
@@ -358,24 +414,22 @@ pub struct ExprIter<E>
 where
     E: Expression,
 {
-    iter: <<E::Group as IntoRefIterator<E>>::RefIter as RefIterator<E>>::Iter,
+    iter: <<E::Group as IntoIteratorGen<E>>::IterGen as IteratorGen<E>>::Iter,
 }
 
-impl<E> IntoRefIterator<Expr<E>> for E::Group
+impl<E> IntoIteratorGen<Expr<E>> for E::Group
 where
     E: Expression,
 {
-    type RefIter = ExprIterContainer<E>;
+    type IterGen = ExprIterContainer<E>;
 
     #[inline]
-    fn ref_iter(&self) -> Self::RefIter {
-        ExprIterContainer {
-            iter: self.ref_iter(),
-        }
+    fn gen(&self) -> Self::IterGen {
+        ExprIterContainer { iter: self.gen() }
     }
 }
 
-impl<E> RefIterator<Expr<E>> for ExprIterContainer<E>
+impl<E> IteratorGen<Expr<E>> for ExprIterContainer<E>
 where
     E: Expression,
 {
@@ -403,39 +457,31 @@ where
 
 /// Iterator Module
 pub mod iter {
-    ///
-    ///
-    pub trait RefIterator<T> {
-        ///
-        ///
+    /// An `Iterator` generator that consumes by reference.
+    pub trait IteratorGen<T> {
+        /// Underlying `Iterator` Type
         type Iter: Iterator<Item = T>;
 
-        ///
-        ///
+        /// Get a new `Iterator`.
         fn iter(&self) -> Self::Iter;
     }
 
-    ///
-    ///
-    pub trait IntoRefIterator<T> {
-        ///
-        ///
-        type RefIter: RefIterator<T>;
+    /// Convert a type into a `IteratorGen`.
+    pub trait IntoIteratorGen<T> {
+        /// Underlying `IteratorGen` Type
+        type IterGen: IteratorGen<T>;
 
-        ///
-        ///
-        fn ref_iter(&self) -> Self::RefIter;
+        /// Get a new `IteratorGen`.
+        fn gen(&self) -> Self::IterGen;
 
-        ///
-        ///
-        fn get_iter(&self) -> <Self::RefIter as RefIterator<T>>::Iter {
-            self.ref_iter().iter()
+        /// Get an iterator from the underlying `IterGen`.
+        fn new_iter(&self) -> <Self::IterGen as IteratorGen<T>>::Iter {
+            self.gen().iter()
         }
     }
 
-    /// Check if iterators are equal pointwise using given `eq` function.
-    ///
-    /// TODO: when the nightly `iter_order_by` (issue #64295) is resolved, switch to that
+    // TODO: when the nightly `iter_order_by` (issue #64295) is resolved,
+    // switch to that and remove this function.
     pub(crate) fn eq_by<L, R, F>(lhs: L, rhs: R, mut eq: F) -> bool
     where
         L: IntoIterator,
@@ -462,8 +508,7 @@ pub mod iter {
 
 /// Utilities Module
 pub mod util {
-    ///
-    ///
+    /// Turn an `Iterator` over pairs into a piecewise function.
     #[inline]
     pub fn piecewise_map<T, A, B, I>(t: T, iter: I) -> Option<B>
     where
