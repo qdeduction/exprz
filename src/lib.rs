@@ -155,8 +155,7 @@ where
         }
     }
 
-    ///
-    ///
+    /// Substitute an `Expression` into each `Atom` of `self`.
     fn substitute<F>(self, f: &mut F) -> Self
     where
         Self::Group: FromIterator<Self>,
@@ -170,9 +169,9 @@ where
         }
     }
 
-    ///
-    ///
-    fn substitute_with_iter<'s, I>(self, iter: &I) -> Self
+    /// Use an iterator generator as a piecewise function to substitute an `Expression` into each
+    /// `Atom` of `self`.
+    fn substitute_from_iter<'s, I>(self, iter: &I) -> Self
     where
         Self::Atom: 's + PartialEq,
         Self::Group: FromIterator<Self>,
@@ -183,8 +182,7 @@ where
         })
     }
 
-    ///
-    ///
+    /// Substitute an `Expression` into each `Atom` of `&self`.
     fn substitute_ref<F>(&self, f: &mut F) -> Self
     where
         Self::Group: FromIterator<Self>,
@@ -198,9 +196,9 @@ where
         }
     }
 
-    ///
-    ///
-    fn substitute_ref_with_iter<'s, I>(&self, iter: &I) -> Self
+    /// Use an iterator generator as a piecewise function to substitute an `Expression` into each
+    /// `Atom` of `&self`.
+    fn substitute_ref_from_iter<'s, I>(&self, iter: &I) -> Self
     where
         Self: 's,
         Self::Atom: PartialEq + Clone,
@@ -331,7 +329,7 @@ where
     fn cases(&self) -> ExprRef<Self> {
         match self {
             Self::Atom(atom) => ExprRef::Atom(atom),
-            Self::Group(group) => ExprRef::Group(ExprIterContainer { iter: group.gen() }),
+            Self::Group(group) => ExprRef::Group(ExprIterContainer::new(group.gen())),
         }
     }
 
@@ -399,24 +397,6 @@ where
     }
 }
 
-///
-///
-pub struct ExprIterContainer<E>
-where
-    E: Expression,
-{
-    iter: <E::Group as IntoIteratorGen<E>>::IterGen,
-}
-
-///
-///
-pub struct ExprIter<E>
-where
-    E: Expression,
-{
-    iter: <<E::Group as IntoIteratorGen<E>>::IterGen as IteratorGen<E>>::Iter,
-}
-
 impl<E> IntoIteratorGen<Expr<E>> for E::Group
 where
     E: Expression,
@@ -425,7 +405,7 @@ where
 
     #[inline]
     fn gen(&self) -> Self::IterGen {
-        ExprIterContainer { iter: self.gen() }
+        ExprIterContainer::new(self.gen())
     }
 }
 
@@ -437,9 +417,7 @@ where
 
     #[inline]
     fn iter(&self) -> Self::Iter {
-        ExprIter {
-            iter: self.iter.iter(),
-        }
+        ExprIter::from_container(self)
     }
 }
 
@@ -451,7 +429,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(E::into)
+        self.inner_next().map(E::into)
     }
 }
 
@@ -477,6 +455,46 @@ pub mod iter {
         /// Get an iterator from the underlying `IterGen`.
         fn new_iter(&self) -> <Self::IterGen as IteratorGen<T>>::Iter {
             self.gen().iter()
+        }
+    }
+
+    /// Iterator Helper for use inside of `Expr`
+    pub struct ExprIter<E>
+    where
+        E: super::Expression,
+    {
+        iter: <<E::Group as IntoIteratorGen<E>>::IterGen as IteratorGen<E>>::Iter,
+    }
+
+    impl<E> ExprIter<E>
+    where
+        E: super::Expression,
+    {
+        pub(crate) fn from_container(container: &ExprIterContainer<E>) -> Self {
+            Self {
+                iter: container.iter.iter(),
+            }
+        }
+
+        pub(crate) fn inner_next(&mut self) -> Option<E> {
+            self.iter.next()
+        }
+    }
+
+    /// Container for an `ExprIter`
+    pub struct ExprIterContainer<E>
+    where
+        E: super::Expression,
+    {
+        iter: <E::Group as IntoIteratorGen<E>>::IterGen,
+    }
+
+    impl<E> ExprIterContainer<E>
+    where
+        E: super::Expression,
+    {
+        pub(crate) fn new(iter: <E::Group as IntoIteratorGen<E>>::IterGen) -> Self {
+            Self { iter }
         }
     }
 
