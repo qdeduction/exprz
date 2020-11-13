@@ -39,8 +39,7 @@ where
         }
     }
 
-    ///
-    ///
+    /// Clone an `Expression` that has `Clone`-able `Atom`s.
     #[inline]
     fn clone(&self) -> Self
     where
@@ -50,8 +49,7 @@ where
         Self::from_expr(self.cases().into())
     }
 
-    ///
-    ///
+    /// Check if two `Expression`s are equal using `PartialEq` on their `Atom`s.
     fn eq<Rhs>(&self, other: &Rhs) -> bool
     where
         Rhs: Expression,
@@ -60,14 +58,14 @@ where
         match (self.cases(), other.cases()) {
             (ExprRef::Atom(lhs), ExprRef::Atom(rhs)) => lhs == rhs,
             (ExprRef::Group(lhs), ExprRef::Group(rhs)) => {
-                eq_by(lhs.iter(), rhs.iter(), |l, r| l.eq(&r))
+                eq_by(lhs.iter(), rhs.iter(), move |l, r| l.eq(&r))
             }
             _ => false,
         }
     }
 
-    ///
-    ///
+    /// Check if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
+    /// `Atom`s.
     fn is_subexpression<Rhs>(&self, other: &Rhs) -> bool
     where
         Rhs: Expression,
@@ -82,7 +80,7 @@ where
                 ExprRef::Atom(_) => false,
                 ExprRef::Group(other) => {
                     other.iter().any(move |e| self.is_subexpression(&e))
-                        || eq_by(group.iter(), other.iter(), |l, r| l.eq(&r))
+                        || eq_by(group.iter(), other.iter(), move |l, r| l.eq(&r))
                 }
             },
         }
@@ -96,16 +94,23 @@ where
         Self::Group: FromIterator<Self>,
         I: RefIterator<(&'s Self::Atom, Self)>,
     {
+        self.substitute_by(&mut move |atom| {
+            util::piecewise_map(&atom, iter.iter()).unwrap_or_else(move || Self::from_atom(atom))
+        })
+    }
+
+    ///
+    ///
+    fn substitute_by<F>(self, f: &mut F) -> Self
+    where
+        Self::Group: FromIterator<Self>,
+        F: FnMut(Self::Atom) -> Self,
+    {
         match self.into() {
-            Expr::Atom(atom) => util::piecewise_map(&atom, iter.iter())
-                .unwrap_or_else(move || Self::from_atom(atom)),
-            Expr::Group(group) => Self::from_group(
-                group
-                    .ref_iter()
-                    .iter()
-                    .map(move |e| e.substitute(iter))
-                    .collect(),
-            ),
+            Expr::Atom(atom) => f(atom),
+            Expr::Group(group) => {
+                Self::from_group(group.get_iter().map(move |e| e.substitute_by(f)).collect())
+            }
         }
     }
 
@@ -118,11 +123,23 @@ where
         Self::Group: FromIterator<Self>,
         I: RefIterator<(&'s Self::Atom, &'s Self)>,
     {
+        self.substitute_ref_by(&mut move |atom| {
+            util::piecewise_map(atom, iter.iter())
+                .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone)
+        })
+    }
+
+    ///
+    ///
+    fn substitute_ref_by<F>(&self, f: &mut F) -> Self
+    where
+        Self::Group: FromIterator<Self>,
+        F: FnMut(&Self::Atom) -> Self,
+    {
         match self.cases() {
-            ExprRef::Atom(atom) => util::piecewise_map(atom, iter.iter())
-                .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone),
+            ExprRef::Atom(atom) => f(atom),
             ExprRef::Group(group) => {
-                Self::from_group(group.iter().map(move |e| e.substitute_ref(iter)).collect())
+                Self::from_group(group.iter().map(move |e| e.substitute_ref_by(f)).collect())
             }
         }
     }
@@ -408,6 +425,12 @@ pub mod iter {
         ///
         ///
         fn ref_iter(&self) -> Self::RefIter;
+
+        ///
+        ///
+        fn get_iter(&self) -> <Self::RefIter as RefIterator<T>>::Iter {
+            self.ref_iter().iter()
+        }
     }
 
     /// Check if iterators are equal pointwise using given `eq` function.
