@@ -3,16 +3,15 @@ name = "exprz-core"
 version = "0.0.0"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
+documentation = "https://docs.rs/exprz-core"
 homepage = "https://github.com/qdeduction/exprz"
-documentation = "https://docs.rs/exprz"
 repository = "https://github.com/qdeduction/exprz"
 readme = "README.md"
 license = "ISC"
 keywords = ["expressions"]
 categories = [""]
-description = "exprz core library"
+description = "ExprZ Core Library"
 exclude = [""]
-publish = false
 
 [badges]
 is-it-maintained-issue-resolution = { repository = "qdeduction/exprz" }

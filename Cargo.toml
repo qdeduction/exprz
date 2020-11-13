@@ -3,8 +3,8 @@ name = "exprz"
 version = "0.0.0"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
-homepage = "https://github.com/qdeduction/exprz"
 documentation = "https://docs.rs/exprz"
+homepage = "https://github.com/qdeduction/exprz"
 repository = "https://github.com/qdeduction/exprz"
 readme = "README.md"
 license = "ISC"
@@ -12,7 +12,6 @@ keywords = ["expressions"]
 categories = [""]
 description = "an expression library"
 exclude = [""]
-publish = false
 
 [badges]
 is-it-maintained-issue-resolution = { repository = "qdeduction/exprz" }
