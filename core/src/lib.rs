@@ -433,6 +433,213 @@ where
     }
 }
 
+///
+///
+pub mod parse {
+    use {
+        super::*,
+        core::{iter::Peekable, result},
+    };
+
+    /// `Expression` Parsing Error
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum Error {
+        /// Multiple expressions at top level
+        MultiExpr,
+
+        /// No closing quote
+        MissingQuote,
+
+        /// Group was not closed
+        OpenGroup,
+
+        /// Group was not opened
+        UnopenedGroup,
+    }
+
+    /// `Expression` Parsing Result Type
+    pub type Result<T> = result::Result<T, Error>;
+
+    /// Meaningful Symbols for `Expression` Parsing
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum SymbolType {
+        /// Whitespace
+        Whitespace,
+
+        /// Start of a group
+        GroupOpen,
+
+        /// End of a group
+        GroupClose,
+
+        /// Start of a quoted sub-string
+        Quote,
+
+        /// Other characters
+        Other,
+    }
+
+    impl SymbolType {
+        /// Checks if the classified symbol is whitespace.
+        pub fn is_whitespace<T, C>(classify: C) -> impl Fn(&T) -> bool
+        where
+            C: Fn(&T) -> SymbolType,
+        {
+            move |t| classify(t) == SymbolType::Whitespace
+        }
+
+        /// Checks if the classified symbol is not whitespace.
+        pub fn is_not_whitespace<T, C>(classify: C) -> impl Fn(&T) -> bool
+        where
+            C: Fn(&T) -> SymbolType,
+        {
+            move |t| classify(t) != SymbolType::Whitespace
+        }
+    }
+
+    ///
+    ///
+    pub fn parse<T, E, C, I>(classify: C, iter: I) -> Result<E>
+    where
+        C: Fn(&T) -> SymbolType,
+        I: IntoIterator<Item = T>,
+        E: Expression,
+        E::Atom: FromIterator<T>,
+    {
+        let mut stripped = iter
+            .into_iter()
+            .skip_while(SymbolType::is_whitespace(&classify))
+            .peekable();
+        match stripped.peek() {
+            Some(peek) => match classify(&peek) {
+                SymbolType::GroupOpen => {
+                    let _ = stripped.next();
+                    parse_group(&classify, stripped)
+                }
+                SymbolType::GroupClose => Err(Error::UnopenedGroup),
+                _ => {
+                    let atom = parse_atom_without_leading_whitespace(&classify, &mut stripped)?;
+                    if let Some(next) = stripped.next() {
+                        match classify(&next) {
+                            SymbolType::Whitespace => {
+                                if stripped.any(|t| SymbolType::is_not_whitespace(&classify)(&t)) {
+                                    return Err(Error::MultiExpr);
+                                }
+                            }
+                            SymbolType::GroupOpen | SymbolType::GroupClose => {
+                                return Err(Error::MultiExpr);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Ok(E::from_atom(atom))
+                }
+            },
+            _ => Ok(E::from_atom(E::Atom::from_iter(None))),
+        }
+    }
+
+    fn parse_group<T, E, C, I>(classify: C, mut iter: Peekable<I>) -> Result<E>
+    where
+        C: Fn(&T) -> SymbolType,
+        I: Iterator<Item = T>,
+        E: Expression,
+        E::Atom: FromIterator<T>,
+    {
+        todo!()
+    }
+
+    fn parse_atom_without_leading_whitespace<T, A, C, I>(
+        classify: C,
+        iter: &mut Peekable<I>,
+    ) -> Result<A>
+    where
+        C: Fn(&T) -> SymbolType,
+        I: Iterator<Item = T>,
+        A: FromIterator<T>,
+    {
+        todo!()
+    }
+
+    fn parse_quoted_iterator<'i, T, C, I>(
+        classify: C,
+        iter: &'i mut I,
+    ) -> impl 'i + Iterator<Item = Option<T>>
+    where
+        C: 'i + Fn(&T) -> SymbolType,
+        I: Iterator<Item = T>,
+    {
+        iter.scan(2u8, move |state, a| match *state {
+            2 => Some(Some(a)),
+            1 => {
+                if classify(&a) == SymbolType::Quote {
+                    *state = 0;
+                }
+                Some(Some(a))
+            }
+            0 => Some(None),
+            _ => unreachable!(),
+        })
+    }
+
+    /// Default classification for the `char` type.
+    pub fn default_char_classification(c: &char) -> SymbolType {
+        match c {
+            '(' => SymbolType::GroupOpen,
+            ')' => SymbolType::GroupClose,
+            '"' => SymbolType::Quote,
+            c => {
+                if c.is_whitespace() {
+                    SymbolType::Whitespace
+                } else {
+                    SymbolType::Other
+                }
+            }
+        }
+    }
+
+    /// Parse a string-like `Expression` from an iterator over characters.
+    pub fn from_chars<I, E>(iter: I) -> Result<E>
+    where
+        I: IntoIterator<Item = char>,
+        E: Expression,
+        E::Atom: FromIterator<char>,
+    {
+        parse(default_char_classification, iter)
+    }
+
+    /// Parse a string-like `Expression` from a string.
+    pub fn from_str<S, E>(s: S) -> Result<E>
+    where
+        S: AsRef<str>,
+        E: Expression,
+        E::Atom: FromIterator<char>,
+    {
+        from_chars(s.as_ref().chars())
+    }
+
+    /// Parse a string-like expression `Group` from an iterator over characters.
+    pub fn from_chars_as_group<I, E>(iter: I) -> Result<E::Group>
+    where
+        I: IntoIterator<Item = char>,
+        E: Expression,
+        E::Atom: FromIterator<char>,
+    {
+        from_chars(Some('(').into_iter().chain(iter).chain(Some(')')))
+            .map(move |e: E| e.unwrap_group())
+    }
+
+    /// Parse a string-like expression `Group` from a string.
+    pub fn from_str_as_group<S, E>(s: S) -> Result<E::Group>
+    where
+        S: AsRef<str>,
+        E: Expression,
+        E::Atom: FromIterator<char>,
+    {
+        from_chars_as_group::<_, E>(s.as_ref().chars())
+    }
+}
+
 /// Iterator Module
 pub mod iter {
     /// An `Iterator` generator that consumes by reference.
