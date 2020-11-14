@@ -512,13 +512,10 @@ pub mod parse {
             .peekable();
         match stripped.peek() {
             Some(peek) => match classify(&peek) {
-                SymbolType::GroupOpen => {
-                    let _ = stripped.next();
-                    parse_group(&classify, stripped)
-                }
+                SymbolType::GroupOpen => parse_group(&classify, stripped),
                 SymbolType::GroupClose => Err(Error::UnopenedGroup),
                 _ => {
-                    let atom = parse_atom_without_leading_whitespace(&classify, &mut stripped)?;
+                    let atom = parse_atom(&classify, &mut stripped)?;
                     if let Some(next) = stripped.next() {
                         match classify(&next) {
                             SymbolType::Whitespace => {
@@ -546,38 +543,94 @@ pub mod parse {
         E: Expression,
         E::Atom: FromIterator<T>,
     {
+        // let mut groups = Vec::default();
+        while let Some(next) = iter.next() {
+            match classify(&next) {
+                SymbolType::Whitespace => continue,
+                SymbolType::GroupOpen => todo!("groups.push(E::Group::default())"),
+                SymbolType::GroupClose => todo!(),
+                _ => todo!(),
+            }
+        }
         todo!()
     }
 
-    fn parse_atom_without_leading_whitespace<T, A, C, I>(
-        classify: C,
-        iter: &mut Peekable<I>,
-    ) -> Result<A>
+    fn parse_atom<T, C, I, A>(classify: C, iter: &mut I) -> Result<A>
     where
         C: Fn(&T) -> SymbolType,
         I: Iterator<Item = T>,
         A: FromIterator<T>,
     {
-        todo!()
+        let mut inside_quote = false;
+        let atom = iter
+            .take_while(|t| {
+                if inside_quote {
+                    if classify(&t) == SymbolType::Quote {
+                        inside_quote = false;
+                    }
+                } else {
+                    match classify(&t) {
+                        SymbolType::Quote => inside_quote = true,
+                        SymbolType::Other => {}
+                        _ => return false,
+                    }
+                }
+                true
+            })
+            .collect();
+        if inside_quote {
+            Err(Error::MissingQuote)
+        } else {
+            Ok(atom)
+        }
     }
 
-    fn parse_quoted_iterator<'i, T, C, I>(
+    fn parse_atom_inner_OLD<'i, T, C, I>(
+        classify: &'i C,
+        iter: &'i mut Peekable<I>,
+    ) -> impl 'i + Iterator<Item = Result<T>>
+    where
+        C: 'i + Fn(&T) -> SymbolType,
+        I: Iterator<Item = T>,
+    {
+        let mut prefix = iter.by_ref().take_while(move |t| match classify(&t) {
+            SymbolType::Quote | SymbolType::Other => true,
+            _ => false,
+        });
+        core::iter::from_fn(move || match prefix.next() {
+            Some(next) => match classify(&next) {
+                SymbolType::Quote => {
+                    let mut _thing = parse_quoted_atom_iterator_OLD(classify, &mut prefix);
+                    todo!()
+                }
+                _ => Some(Ok(next)),
+            },
+            _ => None,
+        })
+    }
+
+    // NOTE: assumes a quote comes in first
+    // NOTE: valid parsing if all terms in the iterator are `Some`
+    fn parse_quoted_atom_iterator_OLD<'i, T, C, I>(
         classify: C,
         iter: &'i mut I,
-    ) -> impl 'i + Iterator<Item = Option<T>>
+    ) -> impl 'i + Iterator<Item = Result<T>>
     where
         C: 'i + Fn(&T) -> SymbolType,
         I: Iterator<Item = T>,
     {
         iter.scan(2u8, move |state, a| match *state {
-            2 => Some(Some(a)),
+            2 => {
+                *state = 1;
+                Some(Ok(a))
+            }
             1 => {
                 if classify(&a) == SymbolType::Quote {
                     *state = 0;
                 }
-                Some(Some(a))
+                Some(Ok(a))
             }
-            0 => Some(None),
+            0 => Some(Err(Error::MissingQuote)),
             _ => unreachable!(),
         })
     }
