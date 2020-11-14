@@ -4,6 +4,8 @@
 //! ExprZ Core Library
 
 #![no_std]
+#![feature(generic_associated_types)]
+#![allow(incomplete_features)]
 
 use {crate::iter::*, core::iter::FromIterator};
 
@@ -136,7 +138,9 @@ where
     {
         match self.into() {
             Expr::Atom(atom) => E::from_atom(f(atom)),
-            Expr::Group(group) => E::from_group(group.new_iter().map(move |e| e.map(f)).collect()),
+            Expr::Group(group) => {
+                E::from_group(group.gen().iter().map(move |e| e.map(f)).collect())
+            }
         }
     }
 
@@ -164,7 +168,7 @@ where
         match self.into() {
             Expr::Atom(atom) => f(atom),
             Expr::Group(group) => {
-                Self::from_group(group.new_iter().map(move |e| e.substitute(f)).collect())
+                Self::from_group(group.gen().iter().map(move |e| e.substitute(f)).collect())
             }
         }
     }
@@ -215,13 +219,13 @@ where
 /// Internal Reference to an `Expression` Type
 pub enum ExprRef<'e, E>
 where
-    E: Expression,
+    E: 'e + Expression,
 {
     /// Reference to an atomic expression
     Atom(&'e E::Atom),
 
     /// Grouped expression `IteratorGen`
-    Group(<E::Group as IntoIteratorGen<E>>::IterGen),
+    Group(<E::Group as IntoIteratorGen<E>>::IterGen<'e>),
 }
 
 impl<'e, E> ExprRef<'e, E>
@@ -255,7 +259,7 @@ where
     /// Converts from an `ExprRef<E>` to an `Option<E::Group::IterGen>`.
     #[must_use]
     #[inline]
-    pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E>>::IterGen> {
+    pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E>>::IterGen<'e>> {
         match self {
             ExprRef::Group(group) => Some(group),
             _ => None,
@@ -272,7 +276,7 @@ where
     /// Returns the contained `Group` value, consuming the `self` value.
     #[inline]
     #[track_caller]
-    pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E>>::IterGen {
+    pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E>>::IterGen<'e> {
         self.group().unwrap()
     }
 }
@@ -401,27 +405,33 @@ impl<E> IntoIteratorGen<Expr<E>> for E::Group
 where
     E: Expression,
 {
-    type IterGen = ExprIterContainer<E>;
+    type IterGen<'t>
+    where
+        E: 't,
+    = ExprIterContainer<'t, E>;
 
     #[inline]
-    fn gen(&self) -> Self::IterGen {
+    fn gen(&self) -> Self::IterGen<'_> {
         ExprIterContainer::new(self.gen())
     }
 }
 
-impl<E> IteratorGen<Expr<E>> for ExprIterContainer<E>
+impl<'e, E> IteratorGen<Expr<E>> for ExprIterContainer<'e, E>
 where
     E: Expression,
 {
-    type Iter = ExprIter<E>;
+    type Iter<'t>
+    where
+        E: 't,
+    = ExprIter<'t, E>;
 
     #[inline]
-    fn iter(&self) -> Self::Iter {
+    fn iter(&self) -> Self::Iter<'_> {
         ExprIter::from_container(self)
     }
 }
 
-impl<E> Iterator for ExprIter<E>
+impl<'e, E> Iterator for ExprIter<'e, E>
 where
     E: Expression,
 {
@@ -579,7 +589,11 @@ pub mod parse {
         E::Group: FromIterator<E>,
     {
         // FIXME[check]: might need to `.fuse()` after the `.filter_map(...)` to ensure we are
-        // stopping at `GroupClose`
+        // stopping at `GroupClose`.
+        //
+        // FIXME[check]: could use `loop { match iter.peek() { ... } }` instead of `filter_map`
+        // technique to skip over whitespace.
+        //
         let target: Result<_> = from_fn(|| match iter.peek() {
             Some(peek) => match classify(&peek) {
                 SymbolType::Whitespace => Some(None),
@@ -713,44 +727,47 @@ pub mod parse {
 
 /// Iterator Module
 pub mod iter {
+    use core::marker::PhantomData;
+
     /// An `Iterator` generator that consumes by reference.
     pub trait IteratorGen<T> {
         /// Underlying `Iterator` Type
-        type Iter: Iterator<Item = T>;
+        type Iter<'t>: Iterator<Item = T>
+        where
+            T: 't;
 
         /// Get a new `Iterator`.
-        fn iter(&self) -> Self::Iter;
+        fn iter(&self) -> Self::Iter<'_>;
     }
 
     /// Convert a type into a `IteratorGen`.
     pub trait IntoIteratorGen<T> {
         /// Underlying `IteratorGen` Type
-        type IterGen: IteratorGen<T>;
+        type IterGen<'t>: IteratorGen<T>
+        where
+            T: 't;
 
         /// Get a new `IteratorGen`.
-        fn gen(&self) -> Self::IterGen;
-
-        /// Get an iterator from the underlying `IterGen`.
-        fn new_iter(&self) -> <Self::IterGen as IteratorGen<T>>::Iter {
-            self.gen().iter()
-        }
+        fn gen(&self) -> Self::IterGen<'_>;
     }
 
     /// Iterator Helper for use inside of `Expr`
-    pub struct ExprIter<E>
+    pub struct ExprIter<'e, E>
     where
         E: super::Expression,
     {
-        iter: <<E::Group as IntoIteratorGen<E>>::IterGen as IteratorGen<E>>::Iter,
+        iter: <<E::Group as IntoIteratorGen<E>>::IterGen<'e> as IteratorGen<E>>::Iter<'e>,
+        phantom: PhantomData<&'e E>,
     }
 
-    impl<E> ExprIter<E>
+    impl<'e, E> ExprIter<'e, E>
     where
         E: super::Expression,
     {
-        pub(crate) fn from_container(container: &ExprIterContainer<E>) -> Self {
+        pub(crate) fn from_container(container: &'e ExprIterContainer<'e, E>) -> Self {
             Self {
                 iter: container.iter.iter(),
+                phantom: PhantomData,
             }
         }
 
@@ -760,19 +777,23 @@ pub mod iter {
     }
 
     /// Container for an `ExprIter`
-    pub struct ExprIterContainer<E>
+    pub struct ExprIterContainer<'e, E>
     where
         E: super::Expression,
     {
-        iter: <E::Group as IntoIteratorGen<E>>::IterGen,
+        iter: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        phantom: PhantomData<&'e E>,
     }
 
-    impl<E> ExprIterContainer<E>
+    impl<'e, E> ExprIterContainer<'e, E>
     where
         E: super::Expression,
     {
-        pub(crate) fn new(iter: <E::Group as IntoIteratorGen<E>>::IterGen) -> Self {
-            Self { iter }
+        pub(crate) fn new(iter: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> Self {
+            Self {
+                iter,
+                phantom: PhantomData,
+            }
         }
     }
 
