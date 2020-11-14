@@ -437,8 +437,11 @@ where
 ///
 pub mod parse {
     use {
-        super::*,
-        core::{iter::Peekable, result},
+        super::Expression,
+        core::{
+            iter::{from_fn, FromIterator, Peekable},
+            result,
+        },
     };
 
     /// `Expression` Parsing Error
@@ -481,6 +484,7 @@ pub mod parse {
 
     impl SymbolType {
         /// Checks if the classified symbol is whitespace.
+        #[inline]
         pub fn is_whitespace<T, C>(classify: C) -> impl Fn(&T) -> bool
         where
             C: Fn(&T) -> SymbolType,
@@ -489,6 +493,7 @@ pub mod parse {
         }
 
         /// Checks if the classified symbol is not whitespace.
+        #[inline]
         pub fn is_not_whitespace<T, C>(classify: C) -> impl Fn(&T) -> bool
         where
             C: Fn(&T) -> SymbolType,
@@ -497,14 +502,14 @@ pub mod parse {
         }
     }
 
-    ///
-    ///
-    pub fn parse<T, E, C, I>(classify: C, iter: I) -> Result<E>
+    /// Parse an `Expression` from an `Iterator` over `collect`-able symbols.
+    pub fn parse<T, C, I, E>(classify: C, iter: I) -> Result<E>
     where
         C: Fn(&T) -> SymbolType,
         I: IntoIterator<Item = T>,
         E: Expression,
         E::Atom: FromIterator<T>,
+        E::Group: FromIterator<E>,
     {
         let mut stripped = iter
             .into_iter()
@@ -512,10 +517,10 @@ pub mod parse {
             .peekable();
         match stripped.peek() {
             Some(peek) => match classify(&peek) {
-                SymbolType::GroupOpen => parse_group(&classify, stripped),
+                SymbolType::GroupOpen => parse_group_continue(&classify, &mut stripped),
                 SymbolType::GroupClose => Err(Error::UnopenedGroup),
                 _ => {
-                    let atom = parse_atom(&classify, &mut stripped)?;
+                    let atom = parse_atom_continue(&classify, &mut stripped)?;
                     if let Some(next) = stripped.next() {
                         match classify(&next) {
                             SymbolType::Whitespace => {
@@ -536,26 +541,79 @@ pub mod parse {
         }
     }
 
-    fn parse_group<T, E, C, I>(classify: C, mut iter: Peekable<I>) -> Result<E>
+    /// Parse a `Group` from an `Iterator` over `collect`-able symbols.
+    #[inline]
+    pub fn parse_group<T, C, I, E>(classify: C, iter: I) -> Result<E>
+    where
+        C: Fn(&T) -> SymbolType,
+        I: IntoIterator<Item = T>,
+        E: Expression,
+        E::Atom: FromIterator<T>,
+        E::Group: FromIterator<E>,
+    {
+        parse_group_continue(classify, &mut iter.into_iter().peekable())
+    }
+
+    #[inline]
+    fn parse_group_continue<T, C, I, E>(classify: C, iter: &mut Peekable<I>) -> Result<E>
     where
         C: Fn(&T) -> SymbolType,
         I: Iterator<Item = T>,
         E: Expression,
         E::Atom: FromIterator<T>,
+        E::Group: FromIterator<E>,
     {
-        // let mut groups = Vec::default();
-        while let Some(next) = iter.next() {
-            match classify(&next) {
-                SymbolType::Whitespace => continue,
-                SymbolType::GroupOpen => todo!("groups.push(E::Group::default())"),
-                SymbolType::GroupClose => todo!(),
-                _ => todo!(),
-            }
-        }
-        todo!()
+        parse_group_continue_at_depth(0, classify, iter)
     }
 
-    fn parse_atom<T, C, I, A>(classify: C, iter: &mut I) -> Result<A>
+    fn parse_group_continue_at_depth<T, C, I, E>(
+        depth: usize,
+        classify: C,
+        iter: &mut Peekable<I>,
+    ) -> Result<E>
+    where
+        C: Fn(&T) -> SymbolType,
+        I: Iterator<Item = T>,
+        E: Expression,
+        E::Atom: FromIterator<T>,
+        E::Group: FromIterator<E>,
+    {
+        // FIXME[check]: might need to `.fuse()` after the `.filter_map(...)` to ensure we are
+        // stopping at `GroupClose`
+        let target: Result<_> = from_fn(|| match iter.peek() {
+            Some(peek) => match classify(&peek) {
+                SymbolType::Whitespace => Some(None),
+                SymbolType::GroupOpen => Some(Some(parse_group_continue_at_depth(
+                    depth + 1,
+                    &classify,
+                    iter,
+                ))),
+                SymbolType::GroupClose => None,
+                _ => Some(Some(parse_atom_continue(&classify, iter).map(E::from_atom))),
+            },
+            _ => Some(Some(Err(Error::OpenGroup))),
+        })
+        .filter_map(move |t| t)
+        .collect();
+        if depth == 0 && iter.find(SymbolType::is_not_whitespace(classify)).is_some() {
+            Err(Error::MultiExpr)
+        } else {
+            target.map(E::from_group)
+        }
+    }
+
+    /// Parse an `Atom` from an `Iterator` over `collect`-able symbols.
+    #[inline]
+    pub fn parse_atom<T, C, I, A>(classify: C, iter: I) -> Result<A>
+    where
+        C: Fn(&T) -> SymbolType,
+        I: IntoIterator<Item = T>,
+        A: FromIterator<T>,
+    {
+        parse_atom_continue(classify, &mut iter.into_iter())
+    }
+
+    fn parse_atom_continue<T, C, I, A>(classify: C, iter: &mut I) -> Result<A>
     where
         C: Fn(&T) -> SymbolType,
         I: Iterator<Item = T>,
@@ -563,7 +621,7 @@ pub mod parse {
     {
         let mut inside_quote = false;
         let atom = iter
-            .take_while(|t| {
+            .take_while(move |t| {
                 if inside_quote {
                     if classify(&t) == SymbolType::Quote {
                         inside_quote = false;
@@ -585,57 +643,8 @@ pub mod parse {
         }
     }
 
-    fn parse_atom_inner_OLD<'i, T, C, I>(
-        classify: &'i C,
-        iter: &'i mut Peekable<I>,
-    ) -> impl 'i + Iterator<Item = Result<T>>
-    where
-        C: 'i + Fn(&T) -> SymbolType,
-        I: Iterator<Item = T>,
-    {
-        let mut prefix = iter.by_ref().take_while(move |t| match classify(&t) {
-            SymbolType::Quote | SymbolType::Other => true,
-            _ => false,
-        });
-        core::iter::from_fn(move || match prefix.next() {
-            Some(next) => match classify(&next) {
-                SymbolType::Quote => {
-                    let mut _thing = parse_quoted_atom_iterator_OLD(classify, &mut prefix);
-                    todo!()
-                }
-                _ => Some(Ok(next)),
-            },
-            _ => None,
-        })
-    }
-
-    // NOTE: assumes a quote comes in first
-    // NOTE: valid parsing if all terms in the iterator are `Some`
-    fn parse_quoted_atom_iterator_OLD<'i, T, C, I>(
-        classify: C,
-        iter: &'i mut I,
-    ) -> impl 'i + Iterator<Item = Result<T>>
-    where
-        C: 'i + Fn(&T) -> SymbolType,
-        I: Iterator<Item = T>,
-    {
-        iter.scan(2u8, move |state, a| match *state {
-            2 => {
-                *state = 1;
-                Some(Ok(a))
-            }
-            1 => {
-                if classify(&a) == SymbolType::Quote {
-                    *state = 0;
-                }
-                Some(Ok(a))
-            }
-            0 => Some(Err(Error::MissingQuote)),
-            _ => unreachable!(),
-        })
-    }
-
     /// Default classification for the `char` type.
+    #[inline]
     pub fn default_char_classification(c: &char) -> SymbolType {
         match c {
             '(' => SymbolType::GroupOpen,
@@ -652,42 +661,51 @@ pub mod parse {
     }
 
     /// Parse a string-like `Expression` from an iterator over characters.
+    #[inline]
     pub fn from_chars<I, E>(iter: I) -> Result<E>
     where
         I: IntoIterator<Item = char>,
         E: Expression,
         E::Atom: FromIterator<char>,
+        E::Group: FromIterator<E>,
     {
         parse(default_char_classification, iter)
     }
 
     /// Parse a string-like `Expression` from a string.
+    #[inline]
     pub fn from_str<S, E>(s: S) -> Result<E>
     where
         S: AsRef<str>,
         E: Expression,
+        E::Group: FromIterator<E>,
         E::Atom: FromIterator<char>,
     {
         from_chars(s.as_ref().chars())
     }
 
     /// Parse a string-like expression `Group` from an iterator over characters.
+    #[inline]
     pub fn from_chars_as_group<I, E>(iter: I) -> Result<E::Group>
     where
         I: IntoIterator<Item = char>,
         E: Expression,
         E::Atom: FromIterator<char>,
+        E::Group: FromIterator<E>,
     {
+        // TODO: use `parse_group` instead of chaining
         from_chars(Some('(').into_iter().chain(iter).chain(Some(')')))
             .map(move |e: E| e.unwrap_group())
     }
 
     /// Parse a string-like expression `Group` from a string.
+    #[inline]
     pub fn from_str_as_group<S, E>(s: S) -> Result<E::Group>
     where
         S: AsRef<str>,
         E: Expression,
         E::Atom: FromIterator<char>,
+        E::Group: FromIterator<E>,
     {
         from_chars_as_group::<_, E>(s.as_ref().chars())
     }
