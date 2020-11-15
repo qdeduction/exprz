@@ -20,11 +20,8 @@ where
     /// Atomic Element Type
     type Atom;
 
-    /// Group Expression `IteratorGen` Term
-    type GroupTerm: Borrow<Self>;
-
     /// Group Expression Type
-    type Group: IntoIteratorGen<Self::GroupTerm>;
+    type Group: IntoIteratorGen<Self>;
 
     /// Get a reference to the underlying `Expression` type.
     fn cases(&self) -> ExprRef<Self>;
@@ -99,61 +96,37 @@ where
     }
 
     /// Check if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    #[inline]
     fn eq<E>(&self, other: &E) -> bool
     where
         E: Expression,
         Self::Atom: PartialEq<E::Atom>,
     {
-        match (self.cases(), other.cases()) {
-            (ExprRef::Atom(lhs), ExprRef::Atom(rhs)) => lhs == rhs,
-            (ExprRef::Group(lhs), ExprRef::Group(rhs)) => {
-                eq_by(lhs.iter(), rhs.iter(), move |l, r| {
-                    l.borrow().eq(r.borrow())
-                })
-            }
-            _ => false,
-        }
+        self.cases() == other.cases()
     }
 
     /// Check if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
     /// `Atom`s.
+    #[inline]
     fn is_subexpression<E>(&self, other: &E) -> bool
     where
         E: Expression,
         Self::Atom: PartialEq<E::Atom>,
     {
-        match self.cases() {
-            ExprRef::Atom(atom) => match other.cases() {
-                ExprRef::Atom(other) => atom == other,
-                ExprRef::Group(other) => {
-                    other.iter().any(move |e| self.is_subexpression(e.borrow()))
-                }
-            },
-            ExprRef::Group(group) => match other.cases() {
-                ExprRef::Atom(_) => false,
-                ExprRef::Group(other) => {
-                    other.iter().any(move |e| self.is_subexpression(e.borrow()))
-                        || eq_by(group.iter(), other.iter(), move |l, r| {
-                            l.borrow().eq(r.borrow())
-                        })
-                }
-            },
-        }
+        self.cases().is_subexpression(&other.cases())
     }
 
     /// Extend a function on `Atom`s to a function on `Expression`s.
     fn map<E, F>(self, f: &mut F) -> E
     where
-        Self: Expression<GroupTerm = Self>,
+        Self::Group: IntoIterator<Item = Self>,
         E: Expression,
         E::Group: FromIterator<E>,
         F: FnMut(Self::Atom) -> E::Atom,
     {
         match self.into() {
             Expr::Atom(atom) => E::from_atom(f(atom)),
-            Expr::Group(group) => {
-                E::from_group(group.gen().iter().map(move |e| e.map(f)).collect())
-            }
+            Expr::Group(group) => E::from_group(group.into_iter().map(move |e| e.map(f)).collect()),
         }
     }
 
@@ -175,23 +148,22 @@ where
     /// Substitute an `Expression` into each `Atom` of `self`.
     fn substitute<F>(self, f: &mut F) -> Self
     where
-        Self: Expression<GroupTerm = Self>,
-        Self::Group: FromIterator<Self>,
+        Self::Group: FromIterator<Self> + IntoIterator<Item = Self>,
         F: FnMut(Self::Atom) -> Self,
     {
         match self.into() {
             Expr::Atom(atom) => f(atom),
             Expr::Group(group) => {
-                Self::from_group(group.gen().iter().map(move |e| e.substitute(f)).collect())
+                Self::from_group(group.into_iter().map(move |e| e.substitute(f)).collect())
             }
         }
     }
 
+    /* TODO: can we even implement this?
     /// Use an iterator generator as a piecewise function to substitute an `Expression` into each
     /// `Atom` of `self`.
     fn substitute_from_iter<'s, I>(self, iter: &I) -> Self
     where
-        Self: Expression<GroupTerm = Self>,
         Self::Atom: 's + PartialEq,
         Self::Group: FromIterator<Self>,
         I: IteratorGen<(&'s Self::Atom, Self)>,
@@ -200,6 +172,7 @@ where
             util::piecewise_map(&atom, iter.iter()).unwrap_or_else(move || Self::from_atom(atom))
         })
     }
+    */
 
     /// Substitute an `Expression` into each `Atom` of `&self`.
     fn substitute_ref<F>(&self, f: &mut F) -> Self
@@ -218,6 +191,7 @@ where
         }
     }
 
+    /* TODO: can we even implement this?
     /// Use an iterator generator as a piecewise function to substitute an `Expression` into each
     /// `Atom` of `&self`.
     fn substitute_ref_from_iter<'s, I>(&self, iter: &I) -> Self
@@ -232,6 +206,7 @@ where
                 .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone)
         })
     }
+    */
 }
 
 /// Internal Reference to an `Expression` Type
@@ -243,7 +218,7 @@ where
     Atom(&'e E::Atom),
 
     /// Grouped expression `IteratorGen`
-    Group(<E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>),
+    Group(<E::Group as IntoIteratorGen<E>>::IterGen<'e>),
 }
 
 impl<'e, E> ExprRef<'e, E>
@@ -277,7 +252,7 @@ where
     /// Converts from an `ExprRef<E>` to an `Option<E::Group::IterGen>`.
     #[must_use]
     #[inline]
-    pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>> {
+    pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E>>::IterGen<'e>> {
         match self {
             ExprRef::Group(group) => Some(group),
             _ => None,
@@ -294,8 +269,56 @@ where
     /// Returns the contained `Group` value, consuming the `self` value.
     #[inline]
     #[track_caller]
-    pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e> {
+    pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E>>::IterGen<'e> {
         self.group().unwrap()
+    }
+
+    /// Check if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
+    /// `Atom`s.
+    pub fn is_subexpression<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
+    where
+        R: Expression,
+        E::Atom: PartialEq<R::Atom>,
+    {
+        match self {
+            ExprRef::Atom(atom) => match other {
+                ExprRef::Atom(other) => atom == other,
+                ExprRef::Group(other) => other
+                    .iter()
+                    .any(move |e| self.is_subexpression(&e.borrow().cases())),
+            },
+            ExprRef::Group(group) => match other {
+                ExprRef::Atom(_) => false,
+                ExprRef::Group(other) => {
+                    other
+                        .iter()
+                        .any(move |e| self.is_subexpression(&e.borrow().cases()))
+                        || eq_by(group.iter(), other.iter(), move |l, r| {
+                            l.borrow().eq(r.borrow())
+                        })
+                }
+            },
+        }
+    }
+}
+
+impl<'l, 'r, L, R> PartialEq<ExprRef<'r, R>> for ExprRef<'l, L>
+where
+    L: Expression,
+    R: Expression,
+    L::Atom: PartialEq<R::Atom>,
+{
+    /// Check if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    fn eq(&self, other: &ExprRef<'r, R>) -> bool {
+        match (self, other) {
+            (ExprRef::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
+            (ExprRef::Group(lhs), ExprRef::Group(rhs)) => {
+                eq_by(lhs.iter(), rhs.iter(), move |l, r| {
+                    l.borrow().eq(r.borrow())
+                })
+            }
+            _ => false,
+        }
     }
 }
 
@@ -331,40 +354,11 @@ where
     #[inline]
     fn from(expr_ref: ExprRef<'e, E>) -> Self {
         match expr_ref {
-            ExprRef::Atom(atom) => Self::from_atom(atom.clone()),
+            ExprRef::Atom(atom) => Self::Atom(atom.clone()),
             ExprRef::Group(group) => {
-                Self::from_group(group.iter().map(move |e| e.borrow().clone()).collect())
+                Self::Group(group.iter().map(move |e| e.borrow().clone()).collect())
             }
         }
-    }
-}
-
-impl<E> Expression for Expr<E>
-where
-    E: Expression,
-{
-    type Atom = E::Atom;
-
-    type GroupTerm = Self;
-
-    type Group = E::Group;
-
-    #[inline]
-    fn cases(&self) -> ExprRef<Self> {
-        match self {
-            Self::Atom(atom) => ExprRef::Atom(atom),
-            Self::Group(group) => ExprRef::Group(ExprIterContainer::new(group.gen())),
-        }
-    }
-
-    #[inline]
-    fn from_atom(atom: <Self as Expression>::Atom) -> Self {
-        Self::Atom(atom)
-    }
-
-    #[inline]
-    fn from_group(group: <Self as Expression>::Group) -> Self {
-        Self::Group(group)
     }
 }
 
@@ -421,6 +415,34 @@ where
     }
 }
 
+/* TODO: Is it possible to implement this?
+impl<E> Expression for Expr<E>
+where
+    E: Expression,
+{
+    type Atom = E::Atom;
+
+    type Group = E::Group;
+
+    #[inline]
+    fn cases(&self) -> ExprRef<Self> {
+        match self {
+            Self::Atom(atom) => ExprRef::Atom(atom),
+            Self::Group(group) => ExprRef::Group(ExprIterContainer::new(group.gen())),
+        }
+    }
+
+    #[inline]
+    fn from_atom(atom: <Self as Expression>::Atom) -> Self {
+        Self::Atom(atom)
+    }
+
+    #[inline]
+    fn from_group(group: <Self as Expression>::Group) -> Self {
+        Self::Group(group)
+    }
+}
+
 impl<E> IntoIteratorGen<Expr<E>> for E::Group
 where
     E: Expression,
@@ -440,6 +462,11 @@ impl<'e, E> IteratorGen<Expr<E>> for ExprIterContainer<'e, E>
 where
     E: Expression,
 {
+    type Item<'t>
+    where
+        E: 't,
+    = Expr<E>;
+
     type Iter<'t>
     where
         E: 't,
@@ -459,12 +486,13 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner_next().map(move |_e| todo!())
+        // FIXME: self.inner_next()
+        todo!()
     }
 }
+*/
 
-///
-///
+/// Parsing Module
 pub mod parse {
     use {
         super::Expression,
@@ -505,7 +533,7 @@ pub mod parse {
         /// End of a group
         GroupClose,
 
-        /// Start of a quoted sub-string
+        /// Start/End of a quoted sub-string
         Quote,
 
         /// Other characters
@@ -747,12 +775,16 @@ pub mod parse {
 
 /// Iterator Module
 pub mod iter {
-    use core::marker::PhantomData;
+    use core::borrow::Borrow;
 
     /// An `Iterator` generator that consumes by reference.
     pub trait IteratorGen<T> {
+        type Item<'t>: Borrow<T>
+        where
+            T: 't;
+
         /// Underlying `Iterator` Type
-        type Iter<'t>: Iterator<Item = T>
+        type Iter<'t>: Iterator<Item = Self::Item<'t>>
         where
             T: 't;
 
@@ -771,14 +803,13 @@ pub mod iter {
         fn gen(&self) -> Self::IterGen<'_>;
     }
 
+    /* TODO: can we even implement this?
     /// Iterator Helper for use inside of `Expr`
-    pub struct ExprIter<'e, E>
+    pub(crate) struct ExprIter<'e, E>
     where
         E: super::Expression,
     {
-        iter: <<E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e> as IteratorGen<
-            E::GroupTerm,
-        >>::Iter<'e>,
+        iter: <<E::Group as IntoIteratorGen<E>>::IterGen<'e> as IteratorGen<E>>::Iter<'e>,
         phantom: PhantomData<&'e E>,
     }
 
@@ -793,17 +824,20 @@ pub mod iter {
             }
         }
 
-        pub(crate) fn inner_next(&mut self) -> Option<E::GroupTerm> {
+        pub(crate) fn inner_next(
+            &mut self,
+        ) -> Option<<<E::Group as IntoIteratorGen<E>>::IterGen<'e> as IteratorGen<E>>::Item<'e>>
+        {
             self.iter.next()
         }
     }
 
     /// Container for an `ExprIter`
-    pub struct ExprIterContainer<'e, E>
+    pub(crate) struct ExprIterContainer<'e, E>
     where
         E: super::Expression,
     {
-        iter: <E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>,
+        iter: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
         phantom: PhantomData<&'e E>,
     }
 
@@ -811,13 +845,14 @@ pub mod iter {
     where
         E: super::Expression,
     {
-        pub(crate) fn new(iter: <E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>) -> Self {
+        pub(crate) fn new(iter: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> Self {
             Self {
                 iter,
                 phantom: PhantomData,
             }
         }
     }
+    */
 
     // TODO: when the nightly `iter_order_by` (issue #64295) is resolved,
     // switch to that and remove this function.
