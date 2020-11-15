@@ -159,21 +159,6 @@ where
         }
     }
 
-    /* TODO: can we even implement this?
-    /// Use an iterator generator as a piecewise function to substitute an `Expression` into each
-    /// `Atom` of `self`.
-    fn substitute_from_iter<'s, I>(self, iter: &I) -> Self
-    where
-        Self::Atom: 's + PartialEq,
-        Self::Group: FromIterator<Self>,
-        I: IteratorGen<(&'s Self::Atom, Self)>,
-    {
-        self.substitute(&mut move |atom| {
-            util::piecewise_map(&atom, iter.iter()).unwrap_or_else(move || Self::from_atom(atom))
-        })
-    }
-    */
-
     /// Substitute an `Expression` into each `Atom` of `&self`.
     fn substitute_ref<F>(&self, f: &mut F) -> Self
     where
@@ -190,23 +175,6 @@ where
             ),
         }
     }
-
-    /* TODO: can we even implement this?
-    /// Use an iterator generator as a piecewise function to substitute an `Expression` into each
-    /// `Atom` of `&self`.
-    fn substitute_ref_from_iter<'s, I>(&self, iter: &I) -> Self
-    where
-        Self: 's,
-        Self::Atom: PartialEq + Clone,
-        Self::Group: FromIterator<Self>,
-        I: IteratorGen<(&'s Self::Atom, &'s Self)>,
-    {
-        self.substitute_ref(&mut move |atom| {
-            util::piecewise_map(atom, iter.iter())
-                .map_or_else(move || Self::from_atom(atom.clone()), Expression::clone)
-        })
-    }
-    */
 }
 
 /// Internal Reference to an `Expression` Type
@@ -880,17 +848,3 @@ pub mod iter {
     }
 }
 
-/// Utilities Module
-pub mod util {
-    /// Turn an `Iterator` over pairs into a piecewise function.
-    #[inline]
-    pub fn piecewise_map<T, A, B, I>(t: T, iter: I) -> Option<B>
-    where
-        T: PartialEq<A>,
-        I: IntoIterator<Item = (A, B)>,
-    {
-        // TODO: replace `find_map` body with `(t == a).then_some(b)` from nightly
-        iter.into_iter()
-            .find_map(move |(a, b)| if t == a { Some(b) } else { None })
-    }
-}
