@@ -8,9 +8,9 @@ homepage = "https://github.com/qdeduction/exprz"
 repository = "https://github.com/qdeduction/exprz"
 readme = "README.md"
 license = "ISC"
-keywords = ["expressions"]
-categories = [""]
-description = "an expression library"
+keywords = ["expressions", "expression-parser", "s-expressions", "s-expr"]
+categories = ["data-structures", "parsing"]
+description = "An Expression Library"
 exclude = [""]
 
 [badges]
