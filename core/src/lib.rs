@@ -93,6 +93,15 @@ where
         self.into().unwrap_group()
     }
 
+    /// Get the default value of an `Expression`: the empty group.
+    #[inline]
+    fn default() -> Self
+    where
+        Self::Group: FromIterator<Self>,
+    {
+        Self::from_group(None.into_iter().collect())
+    }
+
     /// Clone an `Expression` that has `Clone`-able `Atom`s.
     #[inline]
     fn clone(&self) -> Self
@@ -407,6 +416,19 @@ where
     }
 }
 
+impl<E> Default for Expr<E>
+where
+    E: Expression,
+    E::Group: FromIterator<E>,
+{
+    /// Default `Expr`
+    ///
+    /// The default expression is the empty group expression.
+    fn default() -> Self {
+        E::default().into()
+    }
+}
+
 /* TODO: Is it possible to implement this?
 impl<E> Expression for Expr<E>
 where
@@ -480,6 +502,19 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         // FIXME: self.inner_next()
         todo!()
+    }
+}
+
+impl<E> Expr<Expr<E>>
+where
+    E: Expression,
+{
+    /// Monadic join for `Expr`.
+    pub fn join(self) -> Expr<E> {
+        match self {
+            Self::Atom(atom) => Expr::Atom(atom),
+            Self::Group(group) => Expr::from_group(group),
+        }
     }
 }
 */
