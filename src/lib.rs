@@ -3,41 +3,43 @@
 
 //! An Expression Library
 
+#![feature(generic_associated_types)]
+#![allow(incomplete_features)]
+
 pub use exprz_core::*;
 
-///
-///
+/// Vector Expressions
 pub mod vec {
-    use super::*;
+    use {
+        super::{
+            iter::{IntoIteratorGen, IteratorGen},
+            ExprRef, Expression,
+        },
+        core::slice,
+    };
 
-    ///
-    ///
+    /// Vector Expression Type over `String`s
+    pub type ExprString = Expr<String>;
+
+    /// Vector Expression Type
     #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub enum Expr<A> {
-        ///
-        ///
+        /// Atomic expression
         Atom(A),
 
-        ///
-        ///
+        /// Grouped expression
         Group(Vec<Self>),
     }
 
-    ///
-    ///
-    pub type ExprString = Expr<String>;
-
-    impl<A> Expression for Expr<A>
-    where
-        A: 'static,
-    {
+    impl<A> Expression for Expr<A> {
         type Atom = A;
+
         type Group = ExprGroup<A>;
 
         fn cases(&self) -> ExprRef<Self> {
             match self {
                 Self::Atom(atom) => ExprRef::Atom(atom),
-                Self::Group(group) => todo!(),
+                Self::Group(group) => ExprRef::Group(group),
             }
         }
 
@@ -50,42 +52,36 @@ pub mod vec {
         }
     }
 
+    /// Vector Expression Group Wrapper Type
     pub struct ExprGroup<A> {
-        group: Vec<Expr<A>>,
+        /// Inner group
+        pub group: Vec<Expr<A>>,
     }
 
-    pub struct ExprGroupIterGen<'a, A> {
-        group: &'a ExprGroup<A>,
-    }
+    impl<A> IteratorGen<Expr<A>> for &Vec<Expr<A>> {
+        type Item<'t>
+        where
+            A: 't,
+        = &'t Expr<A>;
 
-    pub struct ExprGroupIter<A> {
-        group: Vec<Expr<A>>,
-    }
+        type Iter<'t>
+        where
+            A: 't,
+        = slice::Iter<'t, Expr<A>>;
 
-    impl<A> Iterator for ExprGroupIter<A> {
-        type Item = Expr<A>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            todo!()
+        fn iter(&self) -> Self::Iter<'_> {
+            (self[..]).iter()
         }
     }
 
-    impl<'a, A> iter::IteratorGen<Expr<A>> for ExprGroupIterGen<'a, A> {
-        type Iter = ExprGroupIter<A>;
+    impl<A> IntoIteratorGen<Expr<A>> for ExprGroup<A> {
+        type IterGen<'t>
+        where
+            A: 't,
+        = &'t Vec<Expr<A>>;
 
-        fn iter(&self) -> Self::Iter {
-            todo!()
-        }
-    }
-
-    impl<A> iter::IntoIteratorGen<Expr<A>> for ExprGroup<A>
-    where
-        A: 'static,
-    {
-        type IterGen = ExprGroupIterGen<'static, A>;
-
-        fn gen(&self) -> Self::IterGen {
-            todo!()
+        fn gen(&self) -> Self::IterGen<'_> {
+            &self.group
         }
     }
 }
