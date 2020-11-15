@@ -7,18 +7,24 @@
 #![feature(generic_associated_types)]
 #![allow(incomplete_features)]
 
-use {crate::iter::*, core::iter::FromIterator};
+use {
+    crate::iter::*,
+    core::{borrow::Borrow, iter::FromIterator},
+};
 
 /// Expression Tree
 pub trait Expression
 where
     Self: Into<Expr<Self>>,
 {
-    /// Atomic element type
+    /// Atomic Element Type
     type Atom;
 
-    /// Group expression type
-    type Group: IntoIteratorGen<Self>;
+    /// Group Expression `IteratorGen` Term
+    type GroupTerm: Borrow<Self>;
+
+    /// Group Expression Type
+    type Group: IntoIteratorGen<Self::GroupTerm>;
 
     /// Get a reference to the underlying `Expression` type.
     fn cases(&self) -> ExprRef<Self>;
@@ -101,7 +107,9 @@ where
         match (self.cases(), other.cases()) {
             (ExprRef::Atom(lhs), ExprRef::Atom(rhs)) => lhs == rhs,
             (ExprRef::Group(lhs), ExprRef::Group(rhs)) => {
-                eq_by(lhs.iter(), rhs.iter(), move |l, r| l.eq(&r))
+                eq_by(lhs.iter(), rhs.iter(), move |l, r| {
+                    l.borrow().eq(r.borrow())
+                })
             }
             _ => false,
         }
@@ -117,13 +125,17 @@ where
         match self.cases() {
             ExprRef::Atom(atom) => match other.cases() {
                 ExprRef::Atom(other) => atom == other,
-                ExprRef::Group(other) => other.iter().any(move |e| self.is_subexpression(&e)),
+                ExprRef::Group(other) => {
+                    other.iter().any(move |e| self.is_subexpression(e.borrow()))
+                }
             },
             ExprRef::Group(group) => match other.cases() {
                 ExprRef::Atom(_) => false,
                 ExprRef::Group(other) => {
-                    other.iter().any(move |e| self.is_subexpression(&e))
-                        || eq_by(group.iter(), other.iter(), move |l, r| l.eq(&r))
+                    other.iter().any(move |e| self.is_subexpression(e.borrow()))
+                        || eq_by(group.iter(), other.iter(), move |l, r| {
+                            l.borrow().eq(r.borrow())
+                        })
                 }
             },
         }
@@ -132,6 +144,7 @@ where
     /// Extend a function on `Atom`s to a function on `Expression`s.
     fn map<E, F>(self, f: &mut F) -> E
     where
+        Self: Expression<GroupTerm = Self>,
         E: Expression,
         E::Group: FromIterator<E>,
         F: FnMut(Self::Atom) -> E::Atom,
@@ -154,7 +167,7 @@ where
         match self.cases() {
             ExprRef::Atom(atom) => E::from_atom(f(atom)),
             ExprRef::Group(group) => {
-                E::from_group(group.iter().map(move |e| e.map_ref(f)).collect())
+                E::from_group(group.iter().map(move |e| e.borrow().map_ref(f)).collect())
             }
         }
     }
@@ -162,6 +175,7 @@ where
     /// Substitute an `Expression` into each `Atom` of `self`.
     fn substitute<F>(self, f: &mut F) -> Self
     where
+        Self: Expression<GroupTerm = Self>,
         Self::Group: FromIterator<Self>,
         F: FnMut(Self::Atom) -> Self,
     {
@@ -177,6 +191,7 @@ where
     /// `Atom` of `self`.
     fn substitute_from_iter<'s, I>(self, iter: &I) -> Self
     where
+        Self: Expression<GroupTerm = Self>,
         Self::Atom: 's + PartialEq,
         Self::Group: FromIterator<Self>,
         I: IteratorGen<(&'s Self::Atom, Self)>,
@@ -194,9 +209,12 @@ where
     {
         match self.cases() {
             ExprRef::Atom(atom) => f(atom),
-            ExprRef::Group(group) => {
-                Self::from_group(group.iter().map(move |e| e.substitute_ref(f)).collect())
-            }
+            ExprRef::Group(group) => Self::from_group(
+                group
+                    .iter()
+                    .map(move |e| e.borrow().substitute_ref(f))
+                    .collect(),
+            ),
         }
     }
 
@@ -225,7 +243,7 @@ where
     Atom(&'e E::Atom),
 
     /// Grouped expression `IteratorGen`
-    Group(<E::Group as IntoIteratorGen<E>>::IterGen<'e>),
+    Group(<E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>),
 }
 
 impl<'e, E> ExprRef<'e, E>
@@ -259,7 +277,7 @@ where
     /// Converts from an `ExprRef<E>` to an `Option<E::Group::IterGen>`.
     #[must_use]
     #[inline]
-    pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E>>::IterGen<'e>> {
+    pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>> {
         match self {
             ExprRef::Group(group) => Some(group),
             _ => None,
@@ -276,7 +294,7 @@ where
     /// Returns the contained `Group` value, consuming the `self` value.
     #[inline]
     #[track_caller]
-    pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E>>::IterGen<'e> {
+    pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e> {
         self.group().unwrap()
     }
 }
@@ -315,7 +333,7 @@ where
         match expr_ref {
             ExprRef::Atom(atom) => Self::from_atom(atom.clone()),
             ExprRef::Group(group) => {
-                Self::from_group(group.iter().map(move |e| e.clone()).collect())
+                Self::from_group(group.iter().map(move |e| e.borrow().clone()).collect())
             }
         }
     }
@@ -326,6 +344,8 @@ where
     E: Expression,
 {
     type Atom = E::Atom;
+
+    type GroupTerm = Self;
 
     type Group = E::Group;
 
@@ -439,7 +459,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner_next().map(E::into)
+        self.inner_next().map(move |_e| todo!())
     }
 }
 
@@ -495,30 +515,30 @@ pub mod parse {
     impl SymbolType {
         /// Checks if the classified symbol is whitespace.
         #[inline]
-        pub fn is_whitespace<T, C>(classify: C) -> impl Fn(&T) -> bool
+        pub fn is_whitespace<T, F>(classify: F) -> impl Fn(&T) -> bool
         where
-            C: Fn(&T) -> SymbolType,
+            F: Fn(&T) -> SymbolType,
         {
             move |t| classify(t) == SymbolType::Whitespace
         }
 
         /// Checks if the classified symbol is not whitespace.
         #[inline]
-        pub fn is_not_whitespace<T, C>(classify: C) -> impl Fn(&T) -> bool
+        pub fn is_not_whitespace<T, F>(classify: F) -> impl Fn(&T) -> bool
         where
-            C: Fn(&T) -> SymbolType,
+            F: Fn(&T) -> SymbolType,
         {
             move |t| classify(t) != SymbolType::Whitespace
         }
     }
 
     /// Parse an `Expression` from an `Iterator` over `collect`-able symbols.
-    pub fn parse<T, C, I, E>(classify: C, iter: I) -> Result<E>
+    pub fn parse<I, F, E>(iter: I, classify: F) -> Result<E>
     where
-        C: Fn(&T) -> SymbolType,
-        I: IntoIterator<Item = T>,
+        I: IntoIterator,
+        F: Fn(&I::Item) -> SymbolType,
         E: Expression,
-        E::Atom: FromIterator<T>,
+        E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
         let mut stripped = iter
@@ -527,10 +547,10 @@ pub mod parse {
             .peekable();
         match stripped.peek() {
             Some(peek) => match classify(&peek) {
-                SymbolType::GroupOpen => parse_group_continue(&classify, &mut stripped),
+                SymbolType::GroupOpen => parse_group_continue(&mut stripped, &classify),
                 SymbolType::GroupClose => Err(Error::UnopenedGroup),
                 _ => {
-                    let atom = parse_atom_continue(&classify, &mut stripped)?;
+                    let atom = parse_atom_continue(&mut stripped, &classify)?;
                     if let Some(next) = stripped.next() {
                         match classify(&next) {
                             SymbolType::Whitespace => {
@@ -553,39 +573,39 @@ pub mod parse {
 
     /// Parse a `Group` from an `Iterator` over `collect`-able symbols.
     #[inline]
-    pub fn parse_group<T, C, I, E>(classify: C, iter: I) -> Result<E>
+    pub fn parse_group<I, F, E>(iter: I, classify: F) -> Result<E>
     where
-        C: Fn(&T) -> SymbolType,
-        I: IntoIterator<Item = T>,
+        I: IntoIterator,
+        F: Fn(&I::Item) -> SymbolType,
         E: Expression,
-        E::Atom: FromIterator<T>,
+        E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        parse_group_continue(classify, &mut iter.into_iter().peekable())
+        parse_group_continue(&mut iter.into_iter().peekable(), classify)
     }
 
     #[inline]
-    fn parse_group_continue<T, C, I, E>(classify: C, iter: &mut Peekable<I>) -> Result<E>
+    fn parse_group_continue<I, F, E>(iter: &mut Peekable<I>, classify: F) -> Result<E>
     where
-        C: Fn(&T) -> SymbolType,
-        I: Iterator<Item = T>,
+        I: Iterator,
+        F: Fn(&I::Item) -> SymbolType,
         E: Expression,
-        E::Atom: FromIterator<T>,
+        E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        parse_group_continue_at_depth(0, classify, iter)
+        parse_group_continue_at_depth(0, iter, classify)
     }
 
-    fn parse_group_continue_at_depth<T, C, I, E>(
+    fn parse_group_continue_at_depth<I, F, E>(
         depth: usize,
-        classify: C,
         iter: &mut Peekable<I>,
+        classify: F,
     ) -> Result<E>
     where
-        C: Fn(&T) -> SymbolType,
-        I: Iterator<Item = T>,
+        I: Iterator,
+        F: Fn(&I::Item) -> SymbolType,
         E: Expression,
-        E::Atom: FromIterator<T>,
+        E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
         // FIXME[check]: might need to `.fuse()` after the `.filter_map(...)` to ensure we are
@@ -599,17 +619,17 @@ pub mod parse {
                 SymbolType::Whitespace => Some(None),
                 SymbolType::GroupOpen => Some(Some(parse_group_continue_at_depth(
                     depth + 1,
-                    &classify,
                     iter,
+                    &classify,
                 ))),
                 SymbolType::GroupClose => None,
-                _ => Some(Some(parse_atom_continue(&classify, iter).map(E::from_atom))),
+                _ => Some(Some(parse_atom_continue(iter, &classify).map(E::from_atom))),
             },
             _ => Some(Some(Err(Error::OpenGroup))),
         })
         .filter_map(move |t| t)
         .collect();
-        if depth == 0 && iter.find(SymbolType::is_not_whitespace(classify)).is_some() {
+        if depth == 0 && iter.any(|t| SymbolType::is_not_whitespace(&classify)(&t)) {
             Err(Error::MultiExpr)
         } else {
             target.map(E::from_group)
@@ -618,20 +638,20 @@ pub mod parse {
 
     /// Parse an `Atom` from an `Iterator` over `collect`-able symbols.
     #[inline]
-    pub fn parse_atom<T, C, I, A>(classify: C, iter: I) -> Result<A>
+    pub fn parse_atom<I, F, A>(iter: I, classify: F) -> Result<A>
     where
-        C: Fn(&T) -> SymbolType,
-        I: IntoIterator<Item = T>,
-        A: FromIterator<T>,
+        I: IntoIterator,
+        F: Fn(&I::Item) -> SymbolType,
+        A: FromIterator<I::Item>,
     {
-        parse_atom_continue(classify, &mut iter.into_iter())
+        parse_atom_continue(&mut iter.into_iter(), classify)
     }
 
-    fn parse_atom_continue<T, C, I, A>(classify: C, iter: &mut I) -> Result<A>
+    fn parse_atom_continue<I, F, A>(iter: &mut I, classify: F) -> Result<A>
     where
-        C: Fn(&T) -> SymbolType,
-        I: Iterator<Item = T>,
-        A: FromIterator<T>,
+        I: Iterator,
+        F: Fn(&I::Item) -> SymbolType,
+        A: FromIterator<I::Item>,
     {
         let mut inside_quote = false;
         let atom = iter
@@ -683,7 +703,7 @@ pub mod parse {
         E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
-        parse(default_char_classification, iter)
+        parse(iter, default_char_classification)
     }
 
     /// Parse a string-like `Expression` from a string.
@@ -756,7 +776,9 @@ pub mod iter {
     where
         E: super::Expression,
     {
-        iter: <<E::Group as IntoIteratorGen<E>>::IterGen<'e> as IteratorGen<E>>::Iter<'e>,
+        iter: <<E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e> as IteratorGen<
+            E::GroupTerm,
+        >>::Iter<'e>,
         phantom: PhantomData<&'e E>,
     }
 
@@ -771,7 +793,7 @@ pub mod iter {
             }
         }
 
-        pub(crate) fn inner_next(&mut self) -> Option<E> {
+        pub(crate) fn inner_next(&mut self) -> Option<E::GroupTerm> {
             self.iter.next()
         }
     }
@@ -781,7 +803,7 @@ pub mod iter {
     where
         E: super::Expression,
     {
-        iter: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        iter: <E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>,
         phantom: PhantomData<&'e E>,
     }
 
@@ -789,7 +811,7 @@ pub mod iter {
     where
         E: super::Expression,
     {
-        pub(crate) fn new(iter: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> Self {
+        pub(crate) fn new(iter: <E::Group as IntoIteratorGen<E::GroupTerm>>::IterGen<'e>) -> Self {
             Self {
                 iter,
                 phantom: PhantomData,
