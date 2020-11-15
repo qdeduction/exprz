@@ -72,6 +72,10 @@ where
     }
 
     /// Returns the contained `Atom` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is a `Group`.
     #[inline]
     #[track_caller]
     fn unwrap_atom(self) -> Self::Atom {
@@ -79,6 +83,10 @@ where
     }
 
     /// Returns the contained `Group` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is an `Atom`.
     #[inline]
     #[track_caller]
     fn unwrap_group(self) -> Self::Group {
@@ -228,6 +236,10 @@ where
     }
 
     /// Returns the contained `Atom` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is a `Group`.
     #[inline]
     #[track_caller]
     pub fn unwrap_atom(self) -> &'e E::Atom {
@@ -235,6 +247,10 @@ where
     }
 
     /// Returns the contained `Group` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is an `Atom`.
     #[inline]
     #[track_caller]
     pub fn unwrap_group(self) -> <E::Group as IntoIteratorGen<E>>::IterGen<'e> {
@@ -369,6 +385,10 @@ where
     }
 
     /// Returns the contained `Atom` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is a `Group`.
     #[inline]
     #[track_caller]
     pub fn unwrap_atom(self) -> E::Atom {
@@ -376,6 +396,10 @@ where
     }
 
     /// Returns the contained `Group` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is an `Atom`.
     #[inline]
     #[track_caller]
     pub fn unwrap_group(self) -> E::Group {
@@ -568,8 +592,13 @@ pub mod parse {
     }
 
     /// Parse a `Group` from an `Iterator` over `collect`-able symbols.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parsing failed to find a group instead of a general expression.
     #[inline]
-    pub fn parse_group<I, F, E>(iter: I, classify: F) -> Result<E>
+    #[track_caller]
+    pub fn parse_group<I, F, E>(iter: I, classify: F) -> Result<E::Group>
     where
         I: IntoIterator,
         F: Fn(&I::Item) -> SymbolType,
@@ -577,7 +606,7 @@ pub mod parse {
         E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        parse_group_continue(&mut iter.into_iter().peekable(), classify)
+        parse_group_continue(&mut iter.into_iter().peekable(), classify).map(E::unwrap_group)
     }
 
     #[inline]
@@ -715,7 +744,12 @@ pub mod parse {
     }
 
     /// Parse a string-like expression `Group` from an iterator over characters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parsing failed to find a group instead of a general expression.
     #[inline]
+    #[track_caller]
     pub fn from_chars_as_group<I, E>(iter: I) -> Result<E::Group>
     where
         I: IntoIterator<Item = char>,
@@ -723,9 +757,20 @@ pub mod parse {
         E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
-        // TODO: use `parse_group` instead of chaining
-        from_chars(Some('(').into_iter().chain(iter).chain(Some(')')))
-            .map(move |e: E| e.unwrap_group())
+        // FIXME: check the use of `parse_group` instead of chaining
+        //
+        // New:
+        // ```rust
+        // parse_group::<_, _, E>(iter, default_char_classification)
+        // ```
+        //
+        // Old:
+        // ```rust
+        // from_chars(Some('(').into_iter().chain(iter).chain(Some(')')))
+        //     .map(move |e: E| e.unwrap_group())
+        // ```
+        //
+        parse_group::<_, _, E>(iter, default_char_classification)
     }
 
     /// Parse a string-like expression `Group` from a string.
@@ -847,4 +892,3 @@ pub mod iter {
         }
     }
 }
-
