@@ -15,7 +15,8 @@ pub mod vec {
             iter::{IntoIteratorGen, IteratorGen},
             ExprRef, Expression,
         },
-        core::slice,
+        core::{iter::FromIterator, slice},
+        std::vec,
     };
 
     /// Vector Expression Type over `String`s
@@ -52,10 +53,38 @@ pub mod vec {
         }
     }
 
+    impl<A> Default for Expr<A> {
+        #[inline]
+        fn default() -> Self {
+            <Self as Expression>::default()
+        }
+    }
+
     /// Vector Expression Group Wrapper Type
     pub struct ExprGroup<A> {
         /// Inner group
         pub group: Vec<Expr<A>>,
+    }
+
+    impl<A> IntoIterator for ExprGroup<A> {
+        type Item = Expr<A>;
+
+        type IntoIter = vec::IntoIter<Expr<A>>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.group.into_iter()
+        }
+    }
+
+    impl<A> FromIterator<Expr<A>> for ExprGroup<A> {
+        fn from_iter<I>(iter: I) -> Self
+        where
+            I: IntoIterator<Item = Expr<A>>,
+        {
+            ExprGroup {
+                group: iter.into_iter().collect(),
+            }
+        }
     }
 
     impl<A> IteratorGen<Expr<A>> for &Vec<Expr<A>> {

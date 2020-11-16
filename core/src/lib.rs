@@ -35,6 +35,7 @@ where
     /// Convert from the [canonical enumeration].
     ///
     /// [canonical enumeration]: enum.Expr.html
+    #[must_use]
     #[inline]
     fn from_expr(expr: Expr<Self>) -> Self {
         match expr {
@@ -134,7 +135,7 @@ where
     }
 
     /// Extend a function on `Atom`s to a function on `Expression`s.
-    fn map<E, F>(self, f: &mut F) -> E
+    fn map<E, F>(self, mut f: F) -> E
     where
         Self::Group: IntoIterator<Item = Self>,
         E: Expression,
@@ -143,12 +144,14 @@ where
     {
         match self.into() {
             Expr::Atom(atom) => E::from_atom(f(atom)),
-            Expr::Group(group) => E::from_group(group.into_iter().map(move |e| e.map(f)).collect()),
+            Expr::Group(group) => {
+                E::from_group(group.into_iter().map(move |e| e.map(&mut f)).collect())
+            }
         }
     }
 
     /// Extend a function on `&Atom`s to a function on `&Expression`s.
-    fn map_ref<E, F>(&self, f: &mut F) -> E
+    fn map_ref<E, F>(&self, mut f: F) -> E
     where
         E: Expression,
         E::Group: FromIterator<E>,
@@ -156,28 +159,34 @@ where
     {
         match self.cases() {
             ExprRef::Atom(atom) => E::from_atom(f(atom)),
-            ExprRef::Group(group) => {
-                E::from_group(group.iter().map(move |e| e.borrow().map_ref(f)).collect())
-            }
+            ExprRef::Group(group) => E::from_group(
+                group
+                    .iter()
+                    .map(move |e| e.borrow().map_ref(&mut f))
+                    .collect(),
+            ),
         }
     }
 
     /// Substitute an `Expression` into each `Atom` of `self`.
-    fn substitute<F>(self, f: &mut F) -> Self
+    fn substitute<F>(self, mut f: F) -> Self
     where
         Self::Group: FromIterator<Self> + IntoIterator<Item = Self>,
         F: FnMut(Self::Atom) -> Self,
     {
         match self.into() {
             Expr::Atom(atom) => f(atom),
-            Expr::Group(group) => {
-                Self::from_group(group.into_iter().map(move |e| e.substitute(f)).collect())
-            }
+            Expr::Group(group) => Self::from_group(
+                group
+                    .into_iter()
+                    .map(move |e| e.substitute(&mut f))
+                    .collect(),
+            ),
         }
     }
 
     /// Substitute an `Expression` into each `Atom` of `&self`.
-    fn substitute_ref<F>(&self, f: &mut F) -> Self
+    fn substitute_ref<F>(&self, mut f: F) -> Self
     where
         Self::Group: FromIterator<Self>,
         F: FnMut(&Self::Atom) -> Self,
@@ -187,7 +196,7 @@ where
             ExprRef::Group(group) => Self::from_group(
                 group
                     .iter()
-                    .map(move |e| e.borrow().substitute_ref(f))
+                    .map(move |e| e.borrow().substitute_ref(&mut f))
                     .collect(),
             ),
         }
@@ -332,6 +341,7 @@ impl<E> From<E> for Expr<E>
 where
     E: Expression,
 {
+    #[must_use]
     #[inline]
     fn from(e: E) -> Self {
         e.into()
@@ -344,6 +354,7 @@ where
     E::Group: FromIterator<E>,
     E: Expression,
 {
+    #[must_use]
     #[inline]
     fn from(expr_ref: ExprRef<'e, E>) -> Self {
         match expr_ref {
