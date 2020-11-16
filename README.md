@@ -19,7 +19,7 @@ To use ExprZ in your project add the following to your `Cargo.toml`,
 
 ```toml
 [dependencies]
-exprz = "0.0.0"
+exprz = "0.0.2"
 ```
 
 or run the following on the command line
