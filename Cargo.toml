@@ -1,6 +1,6 @@
 [package]
 name = "exprz"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
 documentation = "https://docs.rs/exprz"
@@ -19,5 +19,5 @@ is-it-maintained-open-issues = { repository = "qdeduction/exprz" }
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-exprz-core = { path = "core" }
+exprz-core = "*"
 

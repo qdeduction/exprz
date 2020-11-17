@@ -9,26 +9,24 @@ _An Expression Library_
 
 </div>
 
+## About
+
+ExprZ is an expression representation and parsing library. ExprZ expressions are typed s-expressions formed from `Atom`s or `Group`s of expressions and represent enumerated types of the form
+
+```rust
+enum Expr<A> {
+    Atom(A),
+    Group(Vec<Self>),
+}
+```
+
+ExprZ generalizes this `enum` by defining an `Expression` trait which encompasses the algebraic properties of the above `enum` but which affords the user the flexibility of a more efficient implementation.
+
+ExprZ comes with default implementations of `Expression`s which use the Rust `std` library. To access only the traits and algorithms through a `no_std` library see the [`core`](core) directory for the [`exprz-core`](https://docs.rs/exprz-core) package.
+
 ## Getting Started
 
-For more information on how to use ExprZ, see the [project page](https://crates.io/crates/exprz) or the [documentation](https://docs.rs/exprz).
-
-## Installation
-
-To use ExprZ in your project add the following to your `Cargo.toml`,
-
-```toml
-[dependencies]
-exprz = "0.0.2"
-```
-
-or run the following on the command line
-
-```sh
-cargo add exprz
-```
-
-if you have [`cargo-add`](https://github.com/killercup/cargo-edit) installed.
+For more information on how to use ExprZ, see the [documentation](https://docs.rs/exprz). 
 
 ## License
 
