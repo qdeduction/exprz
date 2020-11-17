@@ -26,7 +26,7 @@ _ExprZ_ comes with default implementations of `Expression` which use the Rust `s
 
 ### Rust Nightly
 
-The most recent version of _ExprZ_ uses the Rust nightly compiler toolchain which is necessary for defining the main `Expression` trait. In the future we hope to remove this requirement as the trait API becomes more refined over time or once the standard compiler toolchain catches up.
+The most recent version of _ExprZ_ uses the Rust nightly compiler toolchain which is necessary for defining the main `Expression` trait. In the future we hope to remove this requirement as the `Expression` API becomes more refined over time or once the standard compiler toolchain catches up.
 
 ## Getting Started
 
@@ -41,7 +41,7 @@ This project is licensed under the [ISC License](https://opensource.org/licenses
 
 [![Author](https://img.shields.io/badge/-bhgomes-blue?style=for-the-badge)](https://github.com/bhgomes)
 [![License](https://img.shields.io/badge/-LICENSE-lightgray?style=for-the-badge)](LICENSE)
-[![GitHub Repo](https://img.shields.io/badge/-GitHub-black?style=for-the-badge)](https://github.com/qdeduction/exprz.rs)
+[![GitHub Repo](https://img.shields.io/badge/-GitHub-black?style=for-the-badge)](https://github.com/qdeduction/exprz)
 
 </div>
 
