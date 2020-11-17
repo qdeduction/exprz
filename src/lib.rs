@@ -61,6 +61,7 @@ pub mod vec {
     }
 
     /// Vector Expression Group Wrapper Type
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct ExprGroup<A> {
         /// Inner group
         pub group: Vec<Expr<A>>,

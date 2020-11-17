@@ -557,8 +557,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        // FIXME: self.inner_next()
-        todo!()
+        self.inner_next()
     }
 }
 
@@ -600,6 +599,21 @@ pub mod parse {
 
         /// Group was not opened
         UnopenedGroup,
+
+        /// Found an empty group that was not opened or closed
+        BadEmptyGroup,
+
+        /// Found leading whitespace
+        LeadingWhitespace,
+
+        /// Found trailing symbols
+        TrailingSymbols,
+
+        /// Group was opened when only an `Atom` was expected
+        BadOpenGroup,
+
+        /// Atom was started when only a `Group` was expected
+        BadStartAtom,
     }
 
     /// `Expression` Parsing Result Type
@@ -624,27 +638,10 @@ pub mod parse {
         Other,
     }
 
-    impl SymbolType {
-        /// Checks if the classified symbol is whitespace.
-        #[inline]
-        pub fn is_whitespace<T, F>(classify: F) -> impl Fn(&T) -> bool
-        where
-            F: Fn(&T) -> SymbolType,
-        {
-            move |t| classify(t) == SymbolType::Whitespace
-        }
-
-        /// Checks if the classified symbol is not whitespace.
-        #[inline]
-        pub fn is_not_whitespace<T, F>(classify: F) -> impl Fn(&T) -> bool
-        where
-            F: Fn(&T) -> SymbolType,
-        {
-            move |t| classify(t) != SymbolType::Whitespace
-        }
-    }
-
     /// Parse an `Expression` from an `Iterator` over `collect`-able symbols.
+    ///
+    /// This function consumes the iterator expecting nothing before or after the parsed
+    /// `Expression`.
     pub fn parse<I, F, E>(iter: I, classify: F) -> Result<E>
     where
         I: IntoIterator,
@@ -653,25 +650,34 @@ pub mod parse {
         E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        // TODO: Is removing leading/trailing whitespace the job of this function? The other
-        // parsing functions `parse_group` and `parse_atom` do not do this. What is a good API
-        // for this?
-        let mut iter = iter
-            .into_iter()
-            .skip_while(SymbolType::is_whitespace(&classify))
-            .peekable();
+        let mut iter = iter.into_iter().peekable();
+        if let Some(true) = iter.peek().map(|p| classify(p) == SymbolType::Whitespace) {
+            return Err(Error::LeadingWhitespace);
+        }
+        let expr = parse_continue(&mut iter, &classify);
+        iter.next()
+            .map(move |_| Err(Error::MultiExpr))
+            .unwrap_or(expr)
+    }
+
+    /// Try to parse an `Expression` from an `Iterator` over `collect`-able symbols.
+    ///
+    /// The iterator may still have elements remaining after parsing one `Group`.
+    pub fn parse_continue<I, F, E>(iter: &mut Peekable<I>, classify: F) -> Result<E>
+    where
+        I: Iterator,
+        F: Fn(&I::Item) -> SymbolType,
+        E: Expression,
+        E::Atom: FromIterator<I::Item>,
+        E::Group: FromIterator<E>,
+    {
         match iter.peek() {
             Some(peek) => match classify(&peek) {
-                SymbolType::GroupOpen => parse_group_continue(&mut iter, &classify),
                 SymbolType::GroupClose => Err(Error::UnopenedGroup),
-                _ => {
-                    let atom = parse_atom_continue(&mut iter, &classify)?;
-                    if iter.any(|t| SymbolType::is_not_whitespace(&classify)(&t)) {
-                        Err(Error::MultiExpr)
-                    } else {
-                        Ok(E::from_atom(atom))
-                    }
+                SymbolType::GroupOpen => {
+                    parse_group_continue::<_, _, E>(iter, &classify).map(E::from_group)
                 }
+                _ => parse_atom_continue(iter, &classify).map(E::from_atom),
             },
             _ => Ok(E::empty_atom()),
         }
@@ -679,9 +685,7 @@ pub mod parse {
 
     /// Parse a `Group` from an `Iterator` over `collect`-able symbols.
     ///
-    /// # Panics
-    ///
-    /// Panics if the parsing failed to find a group instead of a general expression.
+    /// This function consumes the iterator expecting nothing before or after the parsed `Group`.
     #[inline]
     #[track_caller]
     pub fn parse_group<I, F, E>(iter: I, classify: F) -> Result<E::Group>
@@ -692,11 +696,18 @@ pub mod parse {
         E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        parse_group_continue(&mut iter.into_iter().peekable(), classify).map(E::unwrap_group)
+        let mut iter = iter.into_iter().peekable();
+        let group = parse_group_continue::<_, _, E>(&mut iter, &classify);
+        iter.next()
+            .map(move |_| Err(Error::TrailingSymbols))
+            .unwrap_or(group)
     }
 
+    /// Try to parse a `Group` from an `Iterator` over `collect`-able symbols.
+    ///
+    /// The iterator may still have elements remaining after parsing one `Group`.
     #[inline]
-    fn parse_group_continue<I, F, E>(iter: &mut Peekable<I>, classify: F) -> Result<E>
+    pub fn parse_group_continue<I, F, E>(iter: &mut Peekable<I>, classify: &F) -> Result<E::Group>
     where
         I: Iterator,
         F: Fn(&I::Item) -> SymbolType,
@@ -704,43 +715,22 @@ pub mod parse {
         E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        // TODO: make a public interface for this continuation function
-        //
-        // TODO: Remove `depth`. The actual depth information is not important to the parsing
-        // algorithm, just whether we are at the top level or not, so we can use 1-bit of
-        // information to decide this, either by passing a `bool` around or by unrolling one depth
-        // level down.
-        //
-        parse_group_continue_at_depth(0, iter, &classify)
-    }
-
-    fn parse_group_continue_at_depth<I, F, E>(
-        depth: usize,
-        iter: &mut Peekable<I>,
-        classify: &F,
-    ) -> Result<E>
-    where
-        I: Iterator,
-        F: Fn(&I::Item) -> SymbolType,
-        E: Expression,
-        E::Atom: FromIterator<I::Item>,
-        E::Group: FromIterator<E>,
-    {
-        // TODO: lift the whitespace check to the parent `parse` or remove whitespace checks
-        // entirely?
-        let _ = iter.next();
-        let group: Result<_> =
-            from_fn(parse_group_continue_at_depth_inner(depth, iter, classify)).collect();
-        if depth == 0 && iter.any(|t| SymbolType::is_not_whitespace(classify)(&t)) {
-            Err(Error::MultiExpr)
-        } else {
-            group.map(E::from_group)
+        match iter.peek() {
+            Some(peek) => match classify(&peek) {
+                SymbolType::Whitespace => return Err(Error::LeadingWhitespace),
+                SymbolType::GroupClose => return Err(Error::UnopenedGroup),
+                SymbolType::GroupOpen => {
+                    let _ = iter.next();
+                }
+                _ => return Err(Error::BadStartAtom),
+            },
+            _ => return Err(Error::BadEmptyGroup),
         }
+        from_fn(parse_group_continue_inner(iter, classify)).collect()
     }
 
     #[inline]
-    fn parse_group_continue_at_depth_inner<'f, I, F, E>(
-        depth: usize,
+    fn parse_group_continue_inner<'f, I, F, E>(
         iter: &'f mut Peekable<I>,
         classify: &'f F,
     ) -> impl 'f + FnMut() -> Option<Result<E>>
@@ -757,12 +747,14 @@ pub mod parse {
                     SymbolType::Whitespace => {
                         let _ = iter.next();
                     }
-                    SymbolType::GroupOpen => {
-                        return Some(parse_group_continue_at_depth(depth + 1, iter, classify));
-                    }
                     SymbolType::GroupClose => {
                         let _ = iter.next();
                         return None;
+                    }
+                    SymbolType::GroupOpen => {
+                        return Some(
+                            parse_group_continue::<_, _, E>(iter, classify).map(E::from_group),
+                        );
                     }
                     _ => return Some(parse_atom_continue(iter, classify).map(E::from_atom)),
                 },
@@ -772,6 +764,8 @@ pub mod parse {
     }
 
     /// Parse an `Atom` from an `Iterator` over `collect`-able symbols.
+    ///
+    /// This function consumes the iterator expecting nothing before or after the parsed `Atom`.
     #[inline]
     pub fn parse_atom<I, F, A>(iter: I, classify: F) -> Result<A>
     where
@@ -779,16 +773,30 @@ pub mod parse {
         F: Fn(&I::Item) -> SymbolType,
         A: FromIterator<I::Item>,
     {
-        parse_atom_continue(&mut iter.into_iter().peekable(), &classify)
+        let mut iter = iter.into_iter().peekable();
+        if let Some(peek) = iter.peek() {
+            match classify(&peek) {
+                SymbolType::Whitespace => return Err(Error::LeadingWhitespace),
+                SymbolType::GroupClose => return Err(Error::UnopenedGroup),
+                SymbolType::GroupOpen => return Err(Error::BadOpenGroup),
+                _ => {}
+            }
+        }
+        let atom = parse_atom_continue(&mut iter, &classify);
+        iter.next()
+            .map(move |_| Err(Error::TrailingSymbols))
+            .unwrap_or(atom)
     }
 
-    fn parse_atom_continue<I, F, A>(iter: &mut Peekable<I>, classify: &F) -> Result<A>
+    /// Try to parse an `Atom` from an `Iterator` over `collect`-able symbols.
+    ///
+    /// The iterator may still have elements remaining after parsing one `Atom`.
+    pub fn parse_atom_continue<I, F, A>(iter: &mut Peekable<I>, classify: &F) -> Result<A>
     where
         I: Iterator,
         F: Fn(&I::Item) -> SymbolType,
         A: FromIterator<I::Item>,
     {
-        // TODO: make a public interface for this continuation function
         let mut inside_quote = false;
         let atom = from_fn(parse_atom_continue_inner(iter, classify, &mut inside_quote)).collect();
         if inside_quote {
@@ -874,7 +882,7 @@ pub mod parse {
     ///
     /// # Panics
     ///
-    /// Panics if the parsing failed to find a group instead of a general expression.
+    /// Panics if the parsing was a valid `Expression` but not a `Group`.
     #[inline]
     #[track_caller]
     pub fn from_chars_as_group<I, E>(iter: I) -> Result<E::Group>
@@ -885,24 +893,14 @@ pub mod parse {
         E::Group: FromIterator<E>,
     {
         // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
-        //
-        // FIXME: check the use of `parse_group` instead of chaining
-        //
-        // New:
-        // ```rust
-        // parse_group::<_, _, E>(iter, default_char_classification)
-        // ```
-        //
-        // Old:
-        // ```rust
-        // from_chars(Some('(').into_iter().chain(iter).chain(Some(')')))
-        //     .map(move |e: E| e.unwrap_group())
-        // ```
-        //
-        parse_group::<_, _, E>(iter, default_char_classification)
+        from_chars(Some('(').into_iter().chain(iter).chain(Some(')'))).map(E::unwrap_group)
     }
 
     /// Parse a string-like expression `Group` from a string.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parsing was a valid `Expression` but not a `Group`.
     #[inline]
     pub fn from_str_as_group<S, E>(s: S) -> Result<E::Group>
     where
