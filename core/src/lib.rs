@@ -369,17 +369,6 @@ where
     Group(E::Group),
 }
 
-impl<E> From<E> for Expr<E>
-where
-    E: Expression,
-{
-    #[must_use]
-    #[inline]
-    fn from(e: E) -> Self {
-        e.into()
-    }
-}
-
 impl<'e, E> From<ExprRef<'e, E>> for Expr<E>
 where
     E::Atom: Clone,
