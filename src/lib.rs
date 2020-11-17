@@ -15,7 +15,7 @@ pub mod vec {
             iter::{IntoIteratorGen, IteratorGen},
             ExprRef, Expression,
         },
-        core::{iter::FromIterator, slice, str::FromStr},
+        core::{iter::FromIterator, slice},
         std::vec,
     };
 
@@ -57,14 +57,6 @@ pub mod vec {
         #[inline]
         fn default() -> Self {
             <Self as Expression>::default()
-        }
-    }
-
-    impl<A> FromStr for Expr<A> {
-        type Err = super::parse::Error;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            s.parse()
         }
     }
 

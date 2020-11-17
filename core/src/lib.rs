@@ -104,13 +104,31 @@ where
         self.into().unwrap_group()
     }
 
+    /// Build an empty atomic expression.
+    #[inline]
+    fn empty_atom<T>() -> Self
+    where
+        Self::Atom: FromIterator<T>,
+    {
+        Self::from_atom(None.into_iter().collect())
+    }
+
+    /// Build an empty grouped expression.
+    #[inline]
+    fn empty_group() -> Self
+    where
+        Self::Group: FromIterator<Self>,
+    {
+        Self::from_group(None.into_iter().collect())
+    }
+
     /// Get the default value of an `Expression`: the empty group.
     #[inline]
     fn default() -> Self
     where
         Self::Group: FromIterator<Self>,
     {
-        Self::from_group(None.into_iter().collect())
+        Self::empty_group()
     }
 
     /// Clone an `Expression` that has `Clone`-able `Atom`s.
@@ -387,7 +405,7 @@ where
     E::Group: FromIterator<E>,
 {
     type Err = parse::Error;
-    
+
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         E::from_str(s).map(E::into)
@@ -635,33 +653,27 @@ pub mod parse {
         E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        let mut stripped = iter
+        // TODO: Is removing leading/trailing whitespace the job of this function? The other
+        // parsing functions `parse_group` and `parse_atom` do not do this. What is a good API
+        // for this?
+        let mut iter = iter
             .into_iter()
             .skip_while(SymbolType::is_whitespace(&classify))
             .peekable();
-        match stripped.peek() {
+        match iter.peek() {
             Some(peek) => match classify(&peek) {
-                SymbolType::GroupOpen => parse_group_continue(&mut stripped, &classify),
+                SymbolType::GroupOpen => parse_group_continue(&mut iter, &classify),
                 SymbolType::GroupClose => Err(Error::UnopenedGroup),
                 _ => {
-                    let atom = parse_atom_continue(&mut stripped, &classify)?;
-                    if let Some(next) = stripped.next() {
-                        match classify(&next) {
-                            SymbolType::Whitespace => {
-                                if stripped.any(|t| SymbolType::is_not_whitespace(&classify)(&t)) {
-                                    return Err(Error::MultiExpr);
-                                }
-                            }
-                            SymbolType::GroupOpen | SymbolType::GroupClose => {
-                                return Err(Error::MultiExpr);
-                            }
-                            _ => {}
-                        }
+                    let atom = parse_atom_continue(&mut iter, &classify)?;
+                    if iter.any(|t| SymbolType::is_not_whitespace(&classify)(&t)) {
+                        Err(Error::MultiExpr)
+                    } else {
+                        Ok(E::from_atom(atom))
                     }
-                    Ok(E::from_atom(atom))
                 }
             },
-            _ => Ok(E::from_atom(E::Atom::from_iter(None))),
+            _ => Ok(E::empty_atom()),
         }
     }
 
@@ -692,13 +704,20 @@ pub mod parse {
         E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        parse_group_continue_at_depth(0, iter, classify)
+        // TODO: make a public interface for this continuation function
+        //
+        // TODO: Remove `depth`. The actual depth information is not important to the parsing
+        // algorithm, just whether we are at the top level or not, so we can use 1-bit of
+        // information to decide this, either by passing a `bool` around or by unrolling one depth
+        // level down.
+        //
+        parse_group_continue_at_depth(0, iter, &classify)
     }
 
     fn parse_group_continue_at_depth<I, F, E>(
         depth: usize,
         iter: &mut Peekable<I>,
-        classify: F,
+        classify: &F,
     ) -> Result<E>
     where
         I: Iterator,
@@ -707,31 +726,48 @@ pub mod parse {
         E::Atom: FromIterator<I::Item>,
         E::Group: FromIterator<E>,
     {
-        // FIXME[check]: might need to `.fuse()` after the `.filter_map(...)` to ensure we are
-        // stopping at `GroupClose`.
-        //
-        // FIXME[check]: could use `loop { match iter.peek() { ... } }` instead of `filter_map`
-        // technique to skip over whitespace.
-        //
-        let target: Result<_> = from_fn(|| match iter.peek() {
-            Some(peek) => match classify(&peek) {
-                SymbolType::Whitespace => Some(None),
-                SymbolType::GroupOpen => Some(Some(parse_group_continue_at_depth(
-                    depth + 1,
-                    iter,
-                    &classify,
-                ))),
-                SymbolType::GroupClose => None,
-                _ => Some(Some(parse_atom_continue(iter, &classify).map(E::from_atom))),
-            },
-            _ => Some(Some(Err(Error::OpenGroup))),
-        })
-        .filter_map(move |t| t)
-        .collect();
-        if depth == 0 && iter.any(|t| SymbolType::is_not_whitespace(&classify)(&t)) {
+        // TODO: lift the whitespace check to the parent `parse` or remove whitespace checks
+        // entirely?
+        let _ = iter.next();
+        let group: Result<_> =
+            from_fn(parse_group_continue_at_depth_inner(depth, iter, classify)).collect();
+        if depth == 0 && iter.any(|t| SymbolType::is_not_whitespace(classify)(&t)) {
             Err(Error::MultiExpr)
         } else {
-            target.map(E::from_group)
+            group.map(E::from_group)
+        }
+    }
+
+    #[inline]
+    fn parse_group_continue_at_depth_inner<'f, I, F, E>(
+        depth: usize,
+        iter: &'f mut Peekable<I>,
+        classify: &'f F,
+    ) -> impl 'f + FnMut() -> Option<Result<E>>
+    where
+        I: Iterator,
+        F: 'f + Fn(&I::Item) -> SymbolType,
+        E: Expression,
+        E::Atom: FromIterator<I::Item>,
+        E::Group: FromIterator<E>,
+    {
+        move || loop {
+            match iter.peek() {
+                Some(peek) => match classify(&peek) {
+                    SymbolType::Whitespace => {
+                        let _ = iter.next();
+                    }
+                    SymbolType::GroupOpen => {
+                        return Some(parse_group_continue_at_depth(depth + 1, iter, classify));
+                    }
+                    SymbolType::GroupClose => {
+                        let _ = iter.next();
+                        return None;
+                    }
+                    _ => return Some(parse_atom_continue(iter, classify).map(E::from_atom)),
+                },
+                _ => return Some(Err(Error::OpenGroup)),
+            }
         }
     }
 
@@ -743,36 +779,51 @@ pub mod parse {
         F: Fn(&I::Item) -> SymbolType,
         A: FromIterator<I::Item>,
     {
-        parse_atom_continue(&mut iter.into_iter(), classify)
+        parse_atom_continue(&mut iter.into_iter().peekable(), &classify)
     }
 
-    fn parse_atom_continue<I, F, A>(iter: &mut I, classify: F) -> Result<A>
+    fn parse_atom_continue<I, F, A>(iter: &mut Peekable<I>, classify: &F) -> Result<A>
     where
         I: Iterator,
         F: Fn(&I::Item) -> SymbolType,
         A: FromIterator<I::Item>,
     {
+        // TODO: make a public interface for this continuation function
         let mut inside_quote = false;
-        let atom = iter
-            .take_while(move |t| {
-                if inside_quote {
-                    if classify(&t) == SymbolType::Quote {
-                        inside_quote = false;
-                    }
-                } else {
-                    match classify(&t) {
-                        SymbolType::Quote => inside_quote = true,
-                        SymbolType::Other => {}
-                        _ => return false,
-                    }
-                }
-                true
-            })
-            .collect();
+        let atom = from_fn(parse_atom_continue_inner(iter, classify, &mut inside_quote)).collect();
         if inside_quote {
             Err(Error::MissingQuote)
         } else {
             Ok(atom)
+        }
+    }
+
+    #[inline]
+    fn parse_atom_continue_inner<'f, I, F>(
+        iter: &'f mut Peekable<I>,
+        classify: &'f F,
+        inside_quote: &'f mut bool,
+    ) -> impl 'f + FnMut() -> Option<I::Item>
+    where
+        I: Iterator,
+        F: 'f + Fn(&I::Item) -> SymbolType,
+    {
+        move || match iter.peek() {
+            Some(peek) => {
+                if *inside_quote {
+                    if classify(&peek) == SymbolType::Quote {
+                        *inside_quote = false;
+                    }
+                } else {
+                    match classify(&peek) {
+                        SymbolType::Quote => *inside_quote = true,
+                        SymbolType::Other => {}
+                        _ => return None,
+                    }
+                }
+                iter.next()
+            }
+            _ => None,
         }
     }
 
