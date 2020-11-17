@@ -11,7 +11,7 @@ _An Expression Library_
 
 ## About
 
-ExprZ is an expression representation and parsing library. ExprZ expressions are typed s-expressions formed from atoms or groups of expressions and represent enumerated types of the form
+_ExprZ_ is an expression representation and parsing library. _ExprZ_ expressions are typed s-expressions formed from atoms or groups of expressions and represent enumerated types of the form
 
 ```rust
 enum Expr<A> {
@@ -20,13 +20,17 @@ enum Expr<A> {
 }
 ```
 
-ExprZ generalizes this `enum` by defining an `Expression` trait which encompasses the algebraic properties of the above `enum` but which affords the user the flexibility of a more efficient implementation.
+_ExprZ_ generalizes this `enum` by defining an `Expression` trait which encompasses the algebraic properties of the above `enum` but which affords the user the flexibility of a more efficient implementation.
 
-ExprZ comes with default implementations of `Expression` which use the Rust `std` library. To access only the traits and algorithms through a `no_std` library see the [`core`](core) directory for the [`exprz-core`](https://docs.rs/exprz-core) package.
+_ExprZ_ comes with default implementations of `Expression` which use the Rust `std` library. To access only the traits and algorithms through a `no_std` library see the [`core`](core) directory for the [`exprz-core`](https://docs.rs/exprz-core) package.
+
+### Rust Nightly
+
+The most recent version of _ExprZ_ uses the Rust nightly compiler toolchain which is necessary for defining the main `Expression` trait. In the future we hope to remove this requirement as the trait API becomes more refined over time or once the standard compiler toolchain catches up.
 
 ## Getting Started
 
-For more information on how to use ExprZ, see the [documentation](https://docs.rs/exprz). 
+For more information on how to use _ExprZ_, see the [documentation](https://docs.rs/exprz). 
 
 ## License
 
