@@ -9,7 +9,7 @@
 
 use {
     crate::iter::*,
-    core::{borrow::Borrow, iter::FromIterator},
+    core::{borrow::Borrow, iter::FromIterator, str::FromStr},
 };
 
 /// Expression Tree
@@ -42,6 +42,16 @@ where
             Expr::Atom(atom) => Self::from_atom(atom),
             Expr::Group(group) => Self::from_group(group),
         }
+    }
+
+    /// Parse a string into an `Expression`.
+    #[inline]
+    fn from_str(s: &str) -> parse::Result<Self>
+    where
+        Self::Atom: FromIterator<char>,
+        Self::Group: FromIterator<Self>,
+    {
+        parse::from_str(s)
     }
 
     /// Check if the `Expression` is atomic.
@@ -142,6 +152,7 @@ where
         E::Group: FromIterator<E>,
         F: FnMut(Self::Atom) -> E::Atom,
     {
+        // TODO: implement for `Expr` and reference it here
         match self.into() {
             Expr::Atom(atom) => E::from_atom(f(atom)),
             Expr::Group(group) => {
@@ -157,6 +168,7 @@ where
         E::Group: FromIterator<E>,
         F: FnMut(&Self::Atom) -> E::Atom,
     {
+        // TODO: implement for `ExprRef` and reference it here
         match self.cases() {
             ExprRef::Atom(atom) => E::from_atom(f(atom)),
             ExprRef::Group(group) => E::from_group(
@@ -174,6 +186,7 @@ where
         Self::Group: FromIterator<Self> + IntoIterator<Item = Self>,
         F: FnMut(Self::Atom) -> Self,
     {
+        // TODO: implement for `Expr` and reference it here
         match self.into() {
             Expr::Atom(atom) => f(atom),
             Expr::Group(group) => Self::from_group(
@@ -191,6 +204,7 @@ where
         Self::Group: FromIterator<Self>,
         F: FnMut(&Self::Atom) -> Self,
     {
+        // TODO: implement for `ExprRef` and reference it here
         match self.cases() {
             ExprRef::Atom(atom) => f(atom),
             ExprRef::Group(group) => Self::from_group(
@@ -363,6 +377,20 @@ where
                 Self::Group(group.iter().map(move |e| e.borrow().clone()).collect())
             }
         }
+    }
+}
+
+impl<E> FromStr for Expr<E>
+where
+    E: Expression,
+    E::Atom: FromIterator<char>,
+    E::Group: FromIterator<E>,
+{
+    type Err = parse::Error;
+    
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        E::from_str(s).map(E::into)
     }
 }
 
@@ -774,6 +802,7 @@ pub mod parse {
         E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
+        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
         parse(iter, default_char_classification)
     }
 
@@ -783,9 +812,10 @@ pub mod parse {
     where
         S: AsRef<str>,
         E: Expression,
-        E::Group: FromIterator<E>,
         E::Atom: FromIterator<char>,
+        E::Group: FromIterator<E>,
     {
+        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
         from_chars(s.as_ref().chars())
     }
 
@@ -803,6 +833,8 @@ pub mod parse {
         E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
+        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
+        //
         // FIXME: check the use of `parse_group` instead of chaining
         //
         // New:
@@ -828,6 +860,7 @@ pub mod parse {
         E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
+        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
         from_chars_as_group::<_, E>(s.as_ref().chars())
     }
 }
