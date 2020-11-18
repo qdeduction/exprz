@@ -163,75 +163,46 @@ where
     }
 
     /// Extend a function on `Atom`s to a function on `Expression`s.
-    fn map<E, F>(self, mut f: F) -> E
+    #[inline]
+    fn map<E, F>(self, f: F) -> E
     where
         Self::Group: IntoIterator<Item = Self>,
         E: Expression,
         E::Group: FromIterator<E>,
         F: FnMut(Self::Atom) -> E::Atom,
     {
-        // TODO: implement for `Expr` and reference it here
-        match self.into() {
-            Expr::Atom(atom) => E::from_atom(f(atom)),
-            Expr::Group(group) => {
-                E::from_group(group.into_iter().map(move |e| e.map(&mut f)).collect())
-            }
-        }
+        self.into().map(f)
     }
 
     /// Extend a function on `&Atom`s to a function on `&Expression`s.
-    fn map_ref<E, F>(&self, mut f: F) -> E
+    #[inline]
+    fn map_ref<E, F>(&self, f: F) -> E
     where
         E: Expression,
         E::Group: FromIterator<E>,
         F: FnMut(&Self::Atom) -> E::Atom,
     {
-        // TODO: implement for `ExprRef` and reference it here
-        match self.cases() {
-            ExprRef::Atom(atom) => E::from_atom(f(atom)),
-            ExprRef::Group(group) => E::from_group(
-                group
-                    .iter()
-                    .map(move |e| e.borrow().map_ref(&mut f))
-                    .collect(),
-            ),
-        }
+        self.cases().map_ref(f)
     }
 
     /// Substitute an `Expression` into each `Atom` of `self`.
-    fn substitute<F>(self, mut f: F) -> Self
+    #[inline]
+    fn substitute<F>(self, f: F) -> Self
     where
         Self::Group: FromIterator<Self> + IntoIterator<Item = Self>,
         F: FnMut(Self::Atom) -> Self,
     {
-        // TODO: implement for `Expr` and reference it here
-        match self.into() {
-            Expr::Atom(atom) => f(atom),
-            Expr::Group(group) => Self::from_group(
-                group
-                    .into_iter()
-                    .map(move |e| e.substitute(&mut f))
-                    .collect(),
-            ),
-        }
+        self.into().substitute(f)
     }
 
     /// Substitute an `Expression` into each `Atom` of `&self`.
-    fn substitute_ref<F>(&self, mut f: F) -> Self
+    #[inline]
+    fn substitute_ref<F>(&self, f: F) -> Self
     where
         Self::Group: FromIterator<Self>,
         F: FnMut(&Self::Atom) -> Self,
     {
-        // TODO: implement for `ExprRef` and reference it here
-        match self.cases() {
-            ExprRef::Atom(atom) => f(atom),
-            ExprRef::Group(group) => Self::from_group(
-                group
-                    .iter()
-                    .map(move |e| e.borrow().substitute_ref(&mut f))
-                    .collect(),
-            ),
-        }
+        self.cases().substitute_ref(f)
     }
 }
 
@@ -332,6 +303,59 @@ where
                         })
                 }
             },
+        }
+    }
+
+    /// Extend a function on `&Atom`s to a function on `&Expression`s.
+    pub fn map_ref<O, F>(&self, mut f: F) -> O
+    where
+        O: Expression,
+        O::Group: FromIterator<O>,
+        F: FnMut(&E::Atom) -> O::Atom,
+    {
+        self.map_ref_inner(&mut f)
+    }
+
+    fn map_ref_inner<O, F>(&self, f: &mut F) -> O
+    where
+        O: Expression,
+        O::Group: FromIterator<O>,
+        F: FnMut(&E::Atom) -> O::Atom,
+    {
+        match self {
+            ExprRef::Atom(atom) => O::from_atom(f(atom)),
+            ExprRef::Group(group) => O::from_group(
+                group
+                    .iter()
+                    .map(move |e| e.borrow().cases().map_ref_inner(f))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Substitute an `Expression` into each `Atom` of `&self`.
+    #[inline]
+    pub fn substitute_ref<F>(&self, mut f: F) -> E
+    where
+        E::Group: FromIterator<E>,
+        F: FnMut(&E::Atom) -> E,
+    {
+        self.substitute_ref_inner(&mut f)
+    }
+
+    fn substitute_ref_inner<F>(&self, f: &mut F) -> E
+    where
+        E::Group: FromIterator<E>,
+        F: FnMut(&E::Atom) -> E,
+    {
+        match self {
+            ExprRef::Atom(atom) => f(atom),
+            ExprRef::Group(group) => E::from_group(
+                group
+                    .iter()
+                    .map(move |e| e.borrow().cases().substitute_ref_inner(f))
+                    .collect(),
+            ),
         }
     }
 }
@@ -459,6 +483,62 @@ where
     #[track_caller]
     pub fn unwrap_group(self) -> E::Group {
         self.group().unwrap()
+    }
+
+    /// Extend a function on `Atom`s to a function on `Expression`s.
+    #[inline]
+    pub fn map<O, F>(self, mut f: F) -> O
+    where
+        E::Group: IntoIterator<Item = E>,
+        O: Expression,
+        O::Group: FromIterator<O>,
+        F: FnMut(E::Atom) -> O::Atom,
+    {
+        self.map_inner(&mut f)
+    }
+
+    fn map_inner<O, F>(self, f: &mut F) -> O
+    where
+        E::Group: IntoIterator<Item = E>,
+        O: Expression,
+        O::Group: FromIterator<O>,
+        F: FnMut(E::Atom) -> O::Atom,
+    {
+        match self {
+            Expr::Atom(atom) => O::from_atom(f(atom)),
+            Expr::Group(group) => O::from_group(
+                group
+                    .into_iter()
+                    .map(move |e| e.into().map_inner(f))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Substitute an `Expression` into each `Atom` of `self`.
+    #[inline]
+    pub fn substitute<F>(self, mut f: F) -> E
+    where
+        E::Group: FromIterator<E> + IntoIterator<Item = E>,
+        F: FnMut(E::Atom) -> E,
+    {
+        self.substitute_inner(&mut f)
+    }
+
+    fn substitute_inner<F>(self, f: &mut F) -> E
+    where
+        E::Group: FromIterator<E> + IntoIterator<Item = E>,
+        F: FnMut(E::Atom) -> E,
+    {
+        match self {
+            Expr::Atom(atom) => f(atom),
+            Expr::Group(group) => E::from_group(
+                group
+                    .into_iter()
+                    .map(move |e| e.into().substitute_inner(f))
+                    .collect(),
+            ),
+        }
     }
 }
 
