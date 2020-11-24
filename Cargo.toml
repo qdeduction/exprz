@@ -13,6 +13,10 @@ categories = ["data-structures", "no-std", "parsing"]
 description = "An Expression Library"
 exclude = [""]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [badges]
 is-it-maintained-issue-resolution = { repository = "qdeduction/exprz" }
 is-it-maintained-open-issues = { repository = "qdeduction/exprz" }

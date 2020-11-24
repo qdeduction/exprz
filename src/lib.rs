@@ -3,9 +3,11 @@
 
 //! An Expression Library
 
-#![no_std]
+#![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
 #![feature(generic_associated_types)]
 #![allow(incomplete_features)]
+#![forbid(unsafe_code)]
+#![no_std]
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -1106,6 +1108,7 @@ pub mod iter {
 
 /// Vector Expressions
 #[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub mod vec {
     use {
         super::{iter, parse, ExprRef, Expression},
