@@ -4,6 +4,7 @@
 
 [![Workflow Status](https://img.shields.io/github/workflow/status/qdeduction/exprz/main?label=workflow&style=flat-square)](https://github.com/qdeduction/exprz/actions)
 [![Latest Version](https://img.shields.io/crates/v/exprz.svg?style=flat-square)](https://crates.io/crates/exprz)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue?style=flat-square)](https://docs.rs/exprz)
 
 _An Expression Library_
 
