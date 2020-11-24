@@ -1,6 +1,6 @@
 [package]
 name = "exprz"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
 documentation = "https://docs.rs/exprz"
@@ -9,7 +9,7 @@ repository = "https://github.com/qdeduction/exprz"
 readme = "README.md"
 license = "ISC"
 keywords = ["expressions", "expression-parser", "s-expressions", "s-expr"]
-categories = ["data-structures", "parsing"]
+categories = ["data-structures", "no-std", "parsing"]
 description = "An Expression Library"
 exclude = [""]
 
@@ -18,6 +18,6 @@ is-it-maintained-issue-resolution = { repository = "qdeduction/exprz" }
 is-it-maintained-open-issues = { repository = "qdeduction/exprz" }
 maintenance = { status = "actively-developed" }
 
-[dependencies]
-exprz-core = "0.0.4"
-
+[features]
+default = []
+std = []

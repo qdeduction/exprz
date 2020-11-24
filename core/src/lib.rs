@@ -7,10 +7,21 @@
 #![feature(generic_associated_types)]
 #![allow(incomplete_features)]
 
+/// Package Version
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use {
     crate::iter::*,
     core::{borrow::Borrow, iter::FromIterator, str::FromStr},
 };
+
+// FIXME: Remove `IntoIteratorGen/IteratorGen` by using something like
+//
+// ```
+// for<'s> &'s Self::Group: IntoIterator<Item = &'s Self>,
+// ```
+//
+// in the definition of `Expression`.
 
 /// Expression Tree
 pub trait Expression
@@ -307,6 +318,7 @@ where
     }
 
     /// Extend a function on `&Atom`s to a function on `&Expression`s.
+    #[inline]
     pub fn map_ref<O, F>(&self, mut f: F) -> O
     where
         O: Expression,
@@ -316,6 +328,7 @@ where
         self.map_ref_inner(&mut f)
     }
 
+    #[inline]
     fn map_ref_inner<O, F>(&self, f: &mut F) -> O
     where
         O: Expression,
@@ -343,6 +356,7 @@ where
         self.substitute_ref_inner(&mut f)
     }
 
+    #[inline]
     fn substitute_ref_inner<F>(&self, f: &mut F) -> E
     where
         E::Group: FromIterator<E>,
@@ -755,8 +769,6 @@ pub mod parse {
     /// Parse a `Group` from an `Iterator` over `collect`-able symbols.
     ///
     /// This function consumes the iterator expecting nothing before or after the parsed `Group`.
-    #[inline]
-    #[track_caller]
     pub fn parse_group<I, F, E>(iter: I, classify: F) -> Result<E::Group>
     where
         I: IntoIterator,
@@ -775,7 +787,6 @@ pub mod parse {
     /// Try to parse a `Group` from an `Iterator` over `collect`-able symbols.
     ///
     /// The iterator may still have elements remaining after parsing one `Group`.
-    #[inline]
     pub fn parse_group_continue<I, F, E>(iter: &mut Peekable<I>, classify: &F) -> Result<E::Group>
     where
         I: Iterator,
@@ -835,7 +846,6 @@ pub mod parse {
     /// Parse an `Atom` from an `Iterator` over `collect`-able symbols.
     ///
     /// This function consumes the iterator expecting nothing before or after the parsed `Atom`.
-    #[inline]
     pub fn parse_atom<I, F, A>(iter: I, classify: F) -> Result<A>
     where
         I: IntoIterator,
@@ -971,6 +981,7 @@ pub mod parse {
     ///
     /// Panics if the parsing was a valid `Expression` but not a `Group`.
     #[inline]
+    #[track_caller]
     pub fn from_str_as_group<S, E>(s: S) -> Result<E::Group>
     where
         S: AsRef<str>,
