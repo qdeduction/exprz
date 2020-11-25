@@ -178,6 +178,15 @@ where
         self.cases().is_subexpression(&other.cases())
     }
 
+    /// Check if expression matches given `Pattern`.
+    #[inline]
+    fn matches<P>(&self, pattern: P) -> bool
+    where
+        P: pattern::Pattern<Self>,
+    {
+        pattern.matches(self)
+    }
+
     /// Extend a function on `Atom`s to a function on `Expression`s.
     #[inline]
     fn map<E, F>(self, f: F) -> E
@@ -1024,12 +1033,12 @@ pub mod pattern {
         }
     }
 
-    /// Pattern over a fixed `Expression`.
-    pub struct ExpressionPattern<P>(P)
+    /// Equal Expression Pattern
+    pub struct EqualExpressionPattern<P>(P)
     where
         P: Expression;
 
-    impl<P, E> Pattern<E> for ExpressionPattern<P>
+    impl<P, E> Pattern<E> for EqualExpressionPattern<P>
     where
         P: Expression,
         E: Expression,
@@ -1045,6 +1054,84 @@ pub mod pattern {
                     x.borrow().eq(y.borrow())
                 })
             })
+        }
+    }
+
+    /// Sub-Expression Pattern
+    pub struct SubExpressionPattern<P>(P)
+    where
+        P: Expression;
+
+    impl<P> SubExpressionPattern<P>
+    where
+        P: Expression,
+    {
+        fn matches_atom<E>(pattern: &P, atom: &E::Atom) -> bool
+        where
+            E: Expression,
+            P::Atom: PartialEq<E::Atom>,
+        {
+            match pattern.cases() {
+                ExprRef::Atom(pattern_atom) => pattern_atom == atom,
+                ExprRef::Group(_) => false,
+            }
+        }
+
+        fn matches_group<'e, E>(
+            pattern: &P,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        ) -> bool
+        where
+            E: Expression,
+            P::Atom: PartialEq<E::Atom>,
+        {
+            match pattern.cases() {
+                ExprRef::Atom(_) => group
+                    .iter()
+                    .any(move |e| Self::matches(pattern, e.borrow())),
+                ExprRef::Group(pattern_group) => {
+                    group
+                        .iter()
+                        .any(move |e| Self::matches(pattern, e.borrow()))
+                        || eq_by(pattern_group.iter(), group.iter(), move |l, r| {
+                            l.borrow().eq(r.borrow())
+                        })
+                }
+            }
+        }
+
+        #[inline]
+        fn matches<E>(pattern: &P, expr: &E) -> bool
+        where
+            E: Expression,
+            P::Atom: PartialEq<E::Atom>,
+        {
+            match expr.cases() {
+                ExprRef::Atom(atom) => Self::matches_atom::<E>(pattern, atom),
+                ExprRef::Group(group) => Self::matches_group::<E>(pattern, group),
+            }
+        }
+    }
+
+    impl<P, E> Pattern<E> for SubExpressionPattern<P>
+    where
+        P: Expression,
+        E: Expression,
+        P::Atom: PartialEq<E::Atom>,
+    {
+        #[inline]
+        fn matches_atom(&self, atom: &E::Atom) -> bool {
+            Self::matches_atom::<E>(&self.0, atom)
+        }
+
+        #[inline]
+        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+            Self::matches_group::<E>(&self.0, group)
+        }
+
+        #[inline]
+        fn matches(&self, expr: &E) -> bool {
+            Self::matches(&self.0, expr)
         }
     }
 
@@ -1091,7 +1178,7 @@ pub mod pattern {
     where
         P: Expression<Atom = BasicShape>,
     {
-        fn matches_atom_inner<E>(pattern: &P, atom: &E::Atom) -> bool
+        fn matches_atom<E>(pattern: &P, atom: &E::Atom) -> bool
         where
             E: Expression,
         {
@@ -1102,7 +1189,7 @@ pub mod pattern {
                 .map_or(false, BasicShape::matches_atom)
         }
 
-        fn matches_group_inner<'e, E>(
+        fn matches_group<'e, E>(
             pattern: &P,
             group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
         ) -> bool
@@ -1113,20 +1200,20 @@ pub mod pattern {
                 ExprRef::Atom(pattern_atom) => pattern_atom.matches_group(),
                 ExprRef::Group(pattern_group) => {
                     eq_by(pattern_group.iter(), group.iter(), move |p, e| {
-                        Self::matches_inner(p.borrow(), e.borrow())
+                        Self::matches(p.borrow(), e.borrow())
                     })
                 }
             }
         }
 
         #[inline]
-        fn matches_inner<E>(pattern: &P, expr: &E) -> bool
+        fn matches<E>(pattern: &P, expr: &E) -> bool
         where
             E: Expression,
         {
             match expr.cases() {
-                ExprRef::Atom(atom) => Self::matches_atom_inner::<E>(pattern, atom),
-                ExprRef::Group(group) => Self::matches_group_inner::<E>(pattern, group),
+                ExprRef::Atom(atom) => Self::matches_atom::<E>(pattern, atom),
+                ExprRef::Group(group) => Self::matches_group::<E>(pattern, group),
             }
         }
     }
@@ -1138,12 +1225,17 @@ pub mod pattern {
     {
         #[inline]
         fn matches_atom(&self, atom: &E::Atom) -> bool {
-            Self::matches_atom_inner::<E>(&self.0, atom)
+            Self::matches_atom::<E>(&self.0, atom)
         }
 
         #[inline]
         fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
-            Self::matches_group_inner::<E>(&self.0, group)
+            Self::matches_group::<E>(&self.0, group)
+        }
+
+        #[inline]
+        fn matches(&self, expr: &E) -> bool {
+            Self::matches(&self.0, expr)
         }
     }
 }
@@ -1318,6 +1410,12 @@ pub mod vec {
         alloc::{string::String, vec::Vec},
         core::{iter::FromIterator, str::FromStr},
     };
+
+    /// Equal Expression Pattern
+    pub type EqualExpressionPattern<A> = pattern::EqualExpressionPattern<Expr<A>>;
+
+    /// Sub-Expression Pattern
+    pub type SubExpressionPattern<A> = pattern::SubExpressionPattern<Expr<A>>;
 
     /// Basic Shape Pattern
     pub type BasicShapePattern = pattern::BasicShapePattern<Expr<pattern::BasicShape>>;
