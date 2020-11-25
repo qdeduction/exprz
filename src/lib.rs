@@ -1068,6 +1068,20 @@ pub mod pattern {
         }
     }
 
+    impl BasicShape {
+        /// Check if the shape would match an atom.
+        #[inline]
+        pub fn matches_atom(&self) -> bool {
+            *self == Self::Expr || *self == Self::Atom
+        }
+
+        /// Check if the shape would match a group.
+        #[inline]
+        pub fn matches_group(&self) -> bool {
+            *self == Self::Expr || *self == Self::Group
+        }
+    }
+
     /// Pattern over `BasicShape` Expression.
     pub struct BasicShapePattern<P>(P)
     where
@@ -1085,7 +1099,7 @@ pub mod pattern {
             pattern
                 .cases()
                 .atom()
-                .map_or(false, |a| *a == BasicShape::Atom || *a == BasicShape::Expr)
+                .map_or(false, BasicShape::matches_atom)
         }
 
         fn matches_group_inner<'e, E>(
@@ -1095,11 +1109,14 @@ pub mod pattern {
         where
             E: Expression,
         {
-            pattern.cases().group().map_or(false, move |g| {
-                eq_by(g.iter(), group.iter(), move |p, e| {
-                    Self::matches_inner(p.borrow(), e.borrow())
-                })
-            })
+            match pattern.cases() {
+                ExprRef::Atom(pattern_atom) => pattern_atom.matches_group(),
+                ExprRef::Group(pattern_group) => {
+                    eq_by(pattern_group.iter(), group.iter(), move |p, e| {
+                        Self::matches_inner(p.borrow(), e.borrow())
+                    })
+                }
+            }
         }
 
         #[inline]
