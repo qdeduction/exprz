@@ -1033,6 +1033,30 @@ pub mod pattern {
         }
     }
 
+    /// Mutating Pattern Trait
+    pub trait PatternMut<E>
+    where
+        E: Expression,
+    {
+        /// Check if the pattern matches an atom.
+        fn matches_atom(&mut self, atom: &E::Atom) -> bool;
+
+        /// Check if the pattern matches a group.
+        fn matches_group<'e>(
+            &mut self,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        ) -> bool;
+
+        /// Check if the pattern matches an expression.
+        #[inline]
+        fn matches(&mut self, expr: &E) -> bool {
+            match expr.cases() {
+                ExprRef::Atom(atom) => self.matches_atom(atom),
+                ExprRef::Group(group) => self.matches_group(group),
+            }
+        }
+    }
+
     /// Equal Expression Pattern
     pub struct EqualExpressionPattern<P>(P)
     where
@@ -1040,8 +1064,8 @@ pub mod pattern {
 
     impl<P, E> Pattern<E> for EqualExpressionPattern<P>
     where
-        P: Expression,
         E: Expression,
+        P: Expression,
         P::Atom: PartialEq<E::Atom>,
     {
         fn matches_atom(&self, atom: &E::Atom) -> bool {
@@ -1115,8 +1139,8 @@ pub mod pattern {
 
     impl<P, E> Pattern<E> for SubExpressionPattern<P>
     where
-        P: Expression,
         E: Expression,
+        P: Expression,
         P::Atom: PartialEq<E::Atom>,
     {
         #[inline]
@@ -1132,6 +1156,143 @@ pub mod pattern {
         #[inline]
         fn matches(&self, expr: &E) -> bool {
             Self::matches(&self.0, expr)
+        }
+    }
+
+    /// Wild Card Pattern
+    pub struct WildCardPattern<W, P>(W, P)
+    where
+        P: Expression,
+        W: FnMut(&P::Atom) -> bool;
+
+    impl<W, P> WildCardPattern<W, P>
+    where
+        P: Expression,
+        W: FnMut(&P::Atom) -> bool,
+    {
+        fn matches_atom<F, E>(is_wildcard: F, pattern: &P, atom: &E::Atom) -> bool
+        where
+            F: FnOnce(&P::Atom) -> bool,
+            E: Expression,
+            P::Atom: PartialEq<E::Atom>,
+        {
+            match pattern.cases() {
+                ExprRef::Atom(pattern_atom) => is_wildcard(pattern_atom) || pattern_atom == atom,
+                ExprRef::Group(_) => false,
+            }
+        }
+
+        fn matches_group<'e, F, E>(
+            mut is_wildcard: F,
+            pattern: &P,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        ) -> bool
+        where
+            F: FnMut(&P::Atom) -> bool,
+            E: Expression,
+            P::Atom: PartialEq<E::Atom>,
+        {
+            match pattern.cases() {
+                ExprRef::Atom(pattern_atom) if is_wildcard(pattern_atom) => true,
+                ExprRef::Atom(_) => group
+                    .iter()
+                    .any(move |e| Self::matches(&mut is_wildcard, pattern, e.borrow())),
+                ExprRef::Group(pattern_group) => {
+                    group
+                        .iter()
+                        .any(|e| Self::matches(&mut is_wildcard, pattern, e.borrow()))
+                        || eq_by(pattern_group.iter(), group.iter(), |p, e| {
+                            Self::wildcard_equality(&mut is_wildcard, p.borrow(), e.borrow())
+                        })
+                }
+            }
+        }
+
+        #[inline]
+        fn matches<F, E>(is_wildcard: F, pattern: &P, expr: &E) -> bool
+        where
+            F: FnMut(&P::Atom) -> bool,
+            E: Expression,
+            P::Atom: PartialEq<E::Atom>,
+        {
+            match expr.cases() {
+                ExprRef::Atom(atom) => Self::matches_atom::<_, E>(is_wildcard, pattern, atom),
+                ExprRef::Group(group) => Self::matches_group::<_, E>(is_wildcard, pattern, group),
+            }
+        }
+
+        fn wildcard_equality<F, E>(is_wildcard: &mut F, pattern: &P, expr: &E) -> bool
+        where
+            F: FnMut(&P::Atom) -> bool,
+            E: Expression,
+            P::Atom: PartialEq<E::Atom>,
+        {
+            match pattern.cases() {
+                ExprRef::Atom(pattern_atom) => {
+                    is_wildcard(pattern_atom)
+                        || expr
+                            .cases()
+                            .atom()
+                            .map_or(false, move |a| pattern_atom == a)
+                }
+                ExprRef::Group(pattern_group) => match expr.cases() {
+                    ExprRef::Atom(_) => false,
+                    ExprRef::Group(group) => {
+                        eq_by(pattern_group.iter(), group.iter(), move |p, e| {
+                            Self::wildcard_equality(is_wildcard, p.borrow(), e.borrow())
+                        })
+                    }
+                },
+            }
+        }
+    }
+
+    impl<W, P, E> Pattern<E> for WildCardPattern<W, P>
+    where
+        E: Expression,
+        P: Expression,
+        W: Fn(&P::Atom) -> bool,
+        P::Atom: PartialEq<E::Atom>,
+    {
+        #[inline]
+        fn matches_atom(&self, atom: &E::Atom) -> bool {
+            Self::matches_atom::<_, E>(&self.0, &self.1, atom)
+        }
+
+        #[inline]
+        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+            Self::matches_group::<_, E>(&self.0, &self.1, group)
+        }
+
+        #[inline]
+        fn matches(&self, expr: &E) -> bool {
+            Self::matches(&self.0, &self.1, expr)
+        }
+    }
+
+    impl<W, P, E> PatternMut<E> for WildCardPattern<W, P>
+    where
+        E: Expression,
+        P: Expression,
+        W: FnMut(&P::Atom) -> bool,
+        P::Atom: PartialEq<E::Atom>,
+    {
+        #[inline]
+        fn matches_atom(&mut self, atom: &E::Atom) -> bool {
+            Self::matches_atom::<_, E>(&mut self.0, &self.1, atom)
+        }
+
+        #[inline]
+        fn matches_group<'e>(
+            &mut self,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        ) -> bool {
+            Self::matches_group::<_, E>(&mut self.0, &self.1, group)
+        }
+
+        #[inline]
+        fn matches(&mut self, expr: &E) -> bool {
+            Self::matches(&mut self.0, &self.1, expr)
         }
     }
 
@@ -1220,8 +1381,8 @@ pub mod pattern {
 
     impl<P, E> Pattern<E> for BasicShapePattern<P>
     where
-        P: Expression<Atom = BasicShape>,
         E: Expression,
+        P: Expression<Atom = BasicShape>,
     {
         #[inline]
         fn matches_atom(&self, atom: &E::Atom) -> bool {
@@ -1416,6 +1577,9 @@ pub mod vec {
 
     /// Sub-Expression Pattern
     pub type SubExpressionPattern<A> = pattern::SubExpressionPattern<Expr<A>>;
+
+    /// Wild Card Pattern
+    pub type WildCardPattern<W, A> = pattern::WildCardPattern<W, Expr<A>>;
 
     /// Basic Shape Pattern
     pub type BasicShapePattern = pattern::BasicShapePattern<Expr<pattern::BasicShape>>;
