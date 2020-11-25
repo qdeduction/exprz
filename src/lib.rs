@@ -189,7 +189,7 @@ where
 
     /// Check if `self` matches an equality pattern.
     #[inline]
-    fn matches_equal<P>(&self, pattern: P) -> bool
+    fn matches_equal<P>(&self, pattern: &P) -> bool
     where
         P: Expression,
         P::Atom: PartialEq<Self::Atom>,
@@ -199,7 +199,7 @@ where
 
     /// Check if `self` matches a subexpression pattern.
     #[inline]
-    fn matches_subexpression<P>(&self, pattern: P) -> bool
+    fn matches_subexpression<P>(&self, pattern: &P) -> bool
     where
         P: Expression,
         P::Atom: PartialEq<Self::Atom>,
@@ -209,7 +209,7 @@ where
 
     /// Check if `self` matches a basic shape pattern.
     #[inline]
-    fn matches_basic_shape<P>(&self, pattern: P) -> bool
+    fn matches_basic_shape<P>(&self, pattern: &P) -> bool
     where
         P: Expression<Atom = pattern::BasicShape>,
         P::Atom: PartialEq<Self::Atom>,
@@ -219,7 +219,7 @@ where
 
     /// Check if `self` matches a wildcard expression.
     #[inline]
-    fn matches_wildcard<W, P>(&self, is_wildcard: W, pattern: P) -> bool
+    fn matches_wildcard<W, P>(&self, is_wildcard: W, pattern: &P) -> bool
     where
         P: Expression,
         P::Atom: PartialEq<Self::Atom>,
@@ -1062,7 +1062,7 @@ pub mod pattern {
         fn matches_atom(&self, atom: &E::Atom) -> bool;
 
         /// Check if the pattern matches a group.
-        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool;
+        fn matches_group(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool;
 
         /// Check if the pattern matches an expression.
         #[inline]
@@ -1083,10 +1083,7 @@ pub mod pattern {
         fn matches_atom(&mut self, atom: &E::Atom) -> bool;
 
         /// Check if the pattern matches a group.
-        fn matches_group<'e>(
-            &mut self,
-            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
-        ) -> bool;
+        fn matches_group(&mut self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool;
 
         /// Check if the pattern matches an expression.
         #[inline]
@@ -1099,20 +1096,20 @@ pub mod pattern {
     }
 
     /// Equal Expression Pattern
-    pub struct EqualExpressionPattern<P>(P)
+    pub struct EqualExpressionPattern<'p, P>(&'p P)
     where
         P: Expression;
 
-    impl<P> EqualExpressionPattern<P>
+    impl<'p, P> EqualExpressionPattern<'p, P>
     where
         P: Expression,
     {
-        pub(crate) fn new(pattern: P) -> Self {
+        pub(crate) fn new(pattern: &'p P) -> Self {
             Self(pattern)
         }
     }
 
-    impl<P, E> Pattern<E> for EqualExpressionPattern<P>
+    impl<'p, P, E> Pattern<E> for EqualExpressionPattern<'p, P>
     where
         E: Expression,
         P: Expression,
@@ -1122,25 +1119,25 @@ pub mod pattern {
             self.0.cases().atom().map_or(false, |a| a == atom)
         }
 
-        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+        fn matches_group(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool {
             self.0.cases().group().map_or(false, move |g| {
-                eq_by(g.iter(), group.iter(), move |x, y| {
-                    x.borrow().eq(y.borrow())
+                eq_by(g.iter(), group.iter(), move |p, e| {
+                    p.borrow().eq(e.borrow())
                 })
             })
         }
     }
 
     /// Sub-Expression Pattern
-    pub struct SubExpressionPattern<P>(P)
+    pub struct SubExpressionPattern<'p, P>(&'p P)
     where
         P: Expression;
 
-    impl<P> SubExpressionPattern<P>
+    impl<'p, P> SubExpressionPattern<'p, P>
     where
-        P: Expression,
+        P: 'p + Expression,
     {
-        pub(crate) fn new(pattern: P) -> Self {
+        pub(crate) fn new(pattern: &'p P) -> Self {
             Self(pattern)
         }
 
@@ -1155,9 +1152,9 @@ pub mod pattern {
             }
         }
 
-        fn matches_group<'e, E>(
+        fn matches_group<E>(
             pattern: &P,
-            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>,
         ) -> bool
         where
             E: Expression,
@@ -1171,8 +1168,8 @@ pub mod pattern {
                     group
                         .iter()
                         .any(move |e| Self::matches(pattern, e.borrow()))
-                        || eq_by(pattern_group.iter(), group.iter(), move |l, r| {
-                            l.borrow().eq(r.borrow())
+                        || eq_by(pattern_group.iter(), group.iter(), move |p, e| {
+                            p.borrow().eq(e.borrow())
                         })
                 }
             }
@@ -1191,7 +1188,7 @@ pub mod pattern {
         }
     }
 
-    impl<P, E> Pattern<E> for SubExpressionPattern<P>
+    impl<'p, P, E> Pattern<E> for SubExpressionPattern<'p, P>
     where
         E: Expression,
         P: Expression,
@@ -1203,7 +1200,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+        fn matches_group(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool {
             Self::matches_group::<E>(&self.0, group)
         }
 
@@ -1214,17 +1211,17 @@ pub mod pattern {
     }
 
     /// Wild Card Pattern
-    pub struct WildCardPattern<W, P>(W, P)
+    pub struct WildCardPattern<'p, W, P>(W, &'p P)
     where
         P: Expression,
         W: FnMut(&P::Atom) -> bool;
 
-    impl<W, P> WildCardPattern<W, P>
+    impl<'p, W, P> WildCardPattern<'p, W, P>
     where
-        P: Expression,
+        P: 'p + Expression,
         W: FnMut(&P::Atom) -> bool,
     {
-        pub(crate) fn new(is_wildcard: W, pattern: P) -> Self {
+        pub(crate) fn new(is_wildcard: W, pattern: &'p P) -> Self {
             Self(is_wildcard, pattern)
         }
 
@@ -1240,10 +1237,10 @@ pub mod pattern {
             }
         }
 
-        fn matches_group<'e, F, E>(
+        fn matches_group<F, E>(
             mut is_wildcard: F,
             pattern: &P,
-            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>,
         ) -> bool
         where
             F: FnMut(&P::Atom) -> bool,
@@ -1305,11 +1302,11 @@ pub mod pattern {
         }
     }
 
-    impl<W, P, E> Pattern<E> for WildCardPattern<W, P>
+    impl<'p, W, P, E> Pattern<E> for WildCardPattern<'p, W, P>
     where
         E: Expression,
-        P: Expression,
         W: Fn(&P::Atom) -> bool,
+        P: Expression,
         P::Atom: PartialEq<E::Atom>,
     {
         #[inline]
@@ -1318,7 +1315,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+        fn matches_group(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool {
             Self::matches_group::<_, E>(&self.0, &self.1, group)
         }
 
@@ -1328,11 +1325,11 @@ pub mod pattern {
         }
     }
 
-    impl<W, P, E> PatternMut<E> for WildCardPattern<W, P>
+    impl<'p, W, P, E> PatternMut<E> for WildCardPattern<'p, W, P>
     where
         E: Expression,
-        P: Expression,
         W: FnMut(&P::Atom) -> bool,
+        P: Expression,
         P::Atom: PartialEq<E::Atom>,
     {
         #[inline]
@@ -1341,10 +1338,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group<'e>(
-            &mut self,
-            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
-        ) -> bool {
+        fn matches_group(&mut self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool {
             Self::matches_group::<_, E>(&mut self.0, &self.1, group)
         }
 
@@ -1389,15 +1383,15 @@ pub mod pattern {
     }
 
     /// Pattern over `BasicShape` Expression.
-    pub struct BasicShapePattern<P>(P)
+    pub struct BasicShapePattern<'p, P>(&'p P)
     where
         P: Expression<Atom = BasicShape>;
 
-    impl<P> BasicShapePattern<P>
+    impl<'p, P> BasicShapePattern<'p, P>
     where
-        P: Expression<Atom = BasicShape>,
+        P: 'p + Expression<Atom = BasicShape>,
     {
-        pub(crate) fn new(pattern: P) -> Self {
+        pub(crate) fn new(pattern: &'p P) -> Self {
             Self(pattern)
         }
 
@@ -1412,9 +1406,9 @@ pub mod pattern {
                 .map_or(false, BasicShape::matches_atom)
         }
 
-        fn matches_group<'e, E>(
+        fn matches_group<E>(
             pattern: &P,
-            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>,
         ) -> bool
         where
             E: Expression,
@@ -1441,7 +1435,7 @@ pub mod pattern {
         }
     }
 
-    impl<P, E> Pattern<E> for BasicShapePattern<P>
+    impl<'p, P, E> Pattern<E> for BasicShapePattern<'p, P>
     where
         E: Expression,
         P: Expression<Atom = BasicShape>,
@@ -1452,7 +1446,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+        fn matches_group(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool {
             Self::matches_group::<E>(&self.0, group)
         }
 
