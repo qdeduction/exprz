@@ -1,5 +1,9 @@
 <div align="center">
 
+<a href="https://github.com/qdeduction/exprz">
+    <img src="https://raw.githubusercontent.com/qdeduction/exprz/master/assets/logo.svg" width="200em">
+</a>
+
 # ExprZ
 
 [![Workflow Status](https://img.shields.io/github/workflow/status/qdeduction/exprz/main?label=workflow&style=flat-square)](https://github.com/qdeduction/exprz/actions)
