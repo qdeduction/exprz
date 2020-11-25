@@ -1001,7 +1001,7 @@ pub mod parse {
 
 /// Iterator Module
 pub mod iter {
-    use core::borrow::Borrow;
+    use core::{borrow::Borrow, slice};
 
     /// An `Iterator` generator that consumes by reference.
     pub trait IteratorGen<T> {
@@ -1027,6 +1027,59 @@ pub mod iter {
 
         /// Get a new `IteratorGen`.
         fn gen(&self) -> Self::IterGen<'_>;
+    }
+
+    impl<T> IteratorGen<T> for &[T] {
+        type Item<'t>
+        where
+            T: 't,
+        = &'t T;
+
+        type Iter<'t>
+        where
+            T: 't,
+        = slice::Iter<'t, T>;
+
+        #[inline]
+        fn iter(&self) -> Self::Iter<'_> {
+            (self[..]).iter()
+        }
+    }
+
+    #[cfg(feature = "std")]
+    use std::vec::Vec;
+
+    #[cfg(feature = "std")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+    impl<T> IteratorGen<T> for &Vec<T> {
+        type Item<'t>
+        where
+            T: 't,
+        = &'t T;
+
+        type Iter<'t>
+        where
+            T: 't,
+        = slice::Iter<'t, T>;
+
+        #[inline]
+        fn iter(&self) -> Self::Iter<'_> {
+            (self[..]).iter()
+        }
+    }
+
+    #[cfg(feature = "std")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+    impl<T> IntoIteratorGen<T> for Vec<T> {
+        type IterGen<'t>
+        where
+            T: 't,
+        = &'t Self;
+
+        #[inline]
+        fn gen(&self) -> Self::IterGen<'_> {
+            &self
+        }
     }
 
     /* TODO: can we even implement this?
@@ -1080,14 +1133,15 @@ pub mod iter {
     }
     */
 
-    // TODO: when the nightly `iter_order_by` (issue #64295) is resolved,
-    // switch to that and remove this function.
+    /// Check if two iterator are equal pointwise.
     pub fn eq_by<L, R, F>(lhs: L, rhs: R, mut eq: F) -> bool
     where
         L: IntoIterator,
         R: IntoIterator,
         F: FnMut(L::Item, R::Item) -> bool,
     {
+        // TODO: when the nightly `iter_order_by` (issue #64295) is resolved,
+        // switch to that and remove this function.
         let mut lhs = lhs.into_iter();
         let mut rhs = rhs.into_iter();
         loop {
@@ -1111,7 +1165,7 @@ pub mod iter {
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub mod vec {
     use {
-        super::{iter, parse, ExprRef, Expression},
+        super::{parse, ExprRef, Expression},
         core::{iter::FromIterator, str::FromStr},
         std::{string::String, vec::Vec},
     };
@@ -1179,35 +1233,6 @@ pub mod vec {
         #[inline]
         fn default() -> Self {
             <Self as Expression>::default()
-        }
-    }
-
-    impl<A> iter::IteratorGen<Expr<A>> for &Vec<Expr<A>> {
-        type Item<'t>
-        where
-            A: 't,
-        = &'t Expr<A>;
-
-        type Iter<'t>
-        where
-            A: 't,
-        = core::slice::Iter<'t, Expr<A>>;
-
-        #[inline]
-        fn iter(&self) -> Self::Iter<'_> {
-            (self[..]).iter()
-        }
-    }
-
-    impl<A> iter::IntoIteratorGen<Expr<A>> for Vec<Expr<A>> {
-        type IterGen<'t>
-        where
-            A: 't,
-        = &'t Vec<Expr<A>>;
-
-        #[inline]
-        fn gen(&self) -> Self::IterGen<'_> {
-            &self
         }
     }
 }
