@@ -272,6 +272,31 @@ where
     }
 }
 
+/// Group Type Wrapper Trait
+pub trait HasGroupType<'e, E, T>
+where
+    E: Expression,
+{
+    /// Get underlying group type.
+    fn group_type(&self) -> &'e T;
+}
+
+/// Multi-Expression Trait
+pub trait MultiExpression
+where
+    Self: Expression,
+    for<'e> <Self::Group as IntoIteratorGen<Self>>::IterGen<'e>:
+        HasGroupType<'e, Self, Self::GroupType>,
+{
+    /// Group Type
+    type GroupType;
+
+    /// Get Group Type if `Expression` is a group.
+    fn group_type(&self) -> Option<&Self::GroupType> {
+        self.cases().group().map(move |g| g.group_type())
+    }
+}
+
 /// Internal Reference to an `Expression` Type
 pub enum ExprRef<'e, E>
 where
@@ -1096,6 +1121,7 @@ pub mod pattern {
     }
 
     /// Equal Expression Pattern
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct EqualExpressionPattern<'p, P>(&'p P)
     where
         P: Expression;
@@ -1129,6 +1155,7 @@ pub mod pattern {
     }
 
     /// Sub-Expression Pattern
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct SubExpressionPattern<'p, P>(&'p P)
     where
         P: Expression;
@@ -1211,6 +1238,7 @@ pub mod pattern {
     }
 
     /// Wild Card Pattern
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct WildCardPattern<'p, W, P>(W, &'p P)
     where
         P: Expression,
@@ -1383,6 +1411,7 @@ pub mod pattern {
     }
 
     /// Pattern over `BasicShape` Expression.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct BasicShapePattern<'p, P>(&'p P)
     where
         P: Expression<Atom = BasicShape>;
@@ -1623,9 +1652,12 @@ pub mod iter {
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub mod vec {
     use {
-        super::{parse, ExprRef, Expression},
+        super::{
+            iter::{IntoIteratorGen, IteratorGen},
+            parse, ExprRef, Expression, HasGroupType,
+        },
         alloc::{string::String, vec::Vec},
-        core::{iter::FromIterator, str::FromStr},
+        core::{iter::FromIterator, slice, str::FromStr},
     };
 
     /// Vector Expression Type over `String`s
@@ -1633,7 +1665,7 @@ pub mod vec {
 
     /// Vector Expression Type
     #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-    pub enum Expr<A> {
+    pub enum Expr<A = ()> {
         /// Atomic expression
         Atom(A),
 
@@ -1665,18 +1697,6 @@ pub mod vec {
         }
     }
 
-    impl<A> FromStr for Expr<A>
-    where
-        A: FromIterator<char>,
-    {
-        type Err = parse::Error;
-
-        #[inline]
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Expression::from_str(s)
-        }
-    }
-
     impl<A> From<Expr<A>> for super::Expr<Expr<A>> {
         #[inline]
         fn from(expr: Expr<A>) -> Self {
@@ -1691,6 +1711,129 @@ pub mod vec {
         #[inline]
         fn default() -> Self {
             <Self as Expression>::default()
+        }
+    }
+
+    impl<A> FromStr for Expr<A>
+    where
+        A: FromIterator<char>,
+    {
+        type Err = parse::Error;
+
+        #[inline]
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Expression::from_str(s)
+        }
+    }
+
+    /// Vector `MultiExpression` over `String`s
+    pub type StringMultiExpr<G> = MultiExpr<String, G>;
+
+    /// Vector `MultiExpression` Type
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum MultiExpr<A = (), G = ()> {
+        /// Atomic Expression
+        Atom(A),
+
+        /// Grouped Expression
+        Group(Vec<Self>, G),
+    }
+
+    impl<A, G> Expression for MultiExpr<A, G> {
+        type Atom = A;
+
+        type Group = (Vec<Self>, G);
+
+        #[inline]
+        fn cases(&self) -> ExprRef<Self> {
+            match self {
+                Self::Atom(atom) => ExprRef::Atom(atom),
+                Self::Group(group, group_type) => ExprRef::Group((group, group_type)),
+            }
+        }
+
+        #[inline]
+        fn from_atom(atom: <Self as Expression>::Atom) -> Self {
+            Self::Atom(atom)
+        }
+
+        #[inline]
+        fn from_group(group: <Self as Expression>::Group) -> Self {
+            Self::Group(group.0, group.1)
+        }
+    }
+
+    impl<A, G> IteratorGen<MultiExpr<A, G>> for (&Vec<MultiExpr<A, G>>, &G) {
+        type Item<'t>
+        where
+            A: 't,
+            G: 't,
+        = &'t MultiExpr<A, G>;
+
+        type Iter<'t>
+        where
+            A: 't,
+            G: 't,
+        = slice::Iter<'t, MultiExpr<A, G>>;
+
+        #[inline]
+        fn iter(&self) -> Self::Iter<'_> {
+            self.0.iter()
+        }
+    }
+
+    impl<A, G> IntoIteratorGen<MultiExpr<A, G>> for (Vec<MultiExpr<A, G>>, G) {
+        type IterGen<'t>
+        where
+            A: 't,
+            G: 't,
+        = (&'t Vec<MultiExpr<A, G>>, &'t G);
+
+        fn gen(&self) -> Self::IterGen<'_> {
+            (&self.0, &self.1)
+        }
+    }
+
+    impl<A, G> From<MultiExpr<A, G>> for super::Expr<MultiExpr<A, G>> {
+        #[inline]
+        fn from(expr: MultiExpr<A, G>) -> Self {
+            match expr {
+                MultiExpr::Atom(atom) => Self::Atom(atom),
+                MultiExpr::Group(group, group_type) => Self::Group((group, group_type)),
+            }
+        }
+    }
+
+    impl<A, G> FromIterator<MultiExpr<A, G>> for (Vec<MultiExpr<A, G>>, G)
+    where
+        G: Default,
+    {
+        fn from_iter<I>(iter: I) -> Self
+        where
+            I: IntoIterator<Item = MultiExpr<A, G>>,
+        {
+            (iter.into_iter().collect(), Default::default())
+        }
+    }
+
+    impl<A, G> Default for MultiExpr<A, G>
+    where
+        G: Default,
+    {
+        #[inline]
+        fn default() -> Self {
+            <Self as Expression>::default()
+        }
+    }
+
+    impl<'e, A, G> HasGroupType<'e, MultiExpr<A, G>, G>
+        for <<MultiExpr<A, G> as Expression>::Group as IntoIteratorGen<MultiExpr<A, G>>>::IterGen<
+            'e,
+        >
+    {
+        #[inline]
+        fn group_type(&self) -> &'e G {
+            self.1
         }
     }
 }
