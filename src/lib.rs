@@ -187,6 +187,47 @@ where
         pattern.matches(self)
     }
 
+    /// Check if `self` matches an equality pattern.
+    #[inline]
+    fn matches_equal<P>(&self, pattern: P) -> bool
+    where
+        P: Expression,
+        P::Atom: PartialEq<Self::Atom>,
+    {
+        self.matches(pattern::EqualExpressionPattern::new(pattern))
+    }
+
+    /// Check if `self` matches a subexpression pattern.
+    #[inline]
+    fn matches_subexpression<P>(&self, pattern: P) -> bool
+    where
+        P: Expression,
+        P::Atom: PartialEq<Self::Atom>,
+    {
+        self.matches(pattern::SubExpressionPattern::new(pattern))
+    }
+
+    /// Check if `self` matches a basic shape pattern.
+    #[inline]
+    fn matches_basic_shape<P>(&self, pattern: P) -> bool
+    where
+        P: Expression<Atom = pattern::BasicShape>,
+        P::Atom: PartialEq<Self::Atom>,
+    {
+        self.matches(pattern::BasicShapePattern::new(pattern))
+    }
+
+    /// Check if `self` matches a wildcard expression.
+    #[inline]
+    fn matches_wildcard<W, P>(&self, is_wildcard: W, pattern: P) -> bool
+    where
+        P: Expression,
+        P::Atom: PartialEq<Self::Atom>,
+        W: Fn(&P::Atom) -> bool,
+    {
+        self.matches(pattern::WildCardPattern::new(is_wildcard, pattern))
+    }
+
     /// Extend a function on `Atom`s to a function on `Expression`s.
     #[inline]
     fn map<E, F>(self, f: F) -> E
@@ -1062,6 +1103,15 @@ pub mod pattern {
     where
         P: Expression;
 
+    impl<P> EqualExpressionPattern<P>
+    where
+        P: Expression,
+    {
+        pub(crate) fn new(pattern: P) -> Self {
+            Self(pattern)
+        }
+    }
+
     impl<P, E> Pattern<E> for EqualExpressionPattern<P>
     where
         E: Expression,
@@ -1090,6 +1140,10 @@ pub mod pattern {
     where
         P: Expression,
     {
+        pub(crate) fn new(pattern: P) -> Self {
+            Self(pattern)
+        }
+
         fn matches_atom<E>(pattern: &P, atom: &E::Atom) -> bool
         where
             E: Expression,
@@ -1170,6 +1224,10 @@ pub mod pattern {
         P: Expression,
         W: FnMut(&P::Atom) -> bool,
     {
+        pub(crate) fn new(is_wildcard: W, pattern: P) -> Self {
+            Self(is_wildcard, pattern)
+        }
+
         fn matches_atom<F, E>(is_wildcard: F, pattern: &P, atom: &E::Atom) -> bool
         where
             F: FnOnce(&P::Atom) -> bool,
@@ -1339,6 +1397,10 @@ pub mod pattern {
     where
         P: Expression<Atom = BasicShape>,
     {
+        pub(crate) fn new(pattern: P) -> Self {
+            Self(pattern)
+        }
+
         fn matches_atom<E>(pattern: &P, atom: &E::Atom) -> bool
         where
             E: Expression,
@@ -1567,22 +1629,10 @@ pub mod iter {
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub mod vec {
     use {
-        super::{parse, pattern, ExprRef, Expression},
+        super::{parse, ExprRef, Expression},
         alloc::{string::String, vec::Vec},
         core::{iter::FromIterator, str::FromStr},
     };
-
-    /// Equal Expression Pattern
-    pub type EqualExpressionPattern<A> = pattern::EqualExpressionPattern<Expr<A>>;
-
-    /// Sub-Expression Pattern
-    pub type SubExpressionPattern<A> = pattern::SubExpressionPattern<Expr<A>>;
-
-    /// Wild Card Pattern
-    pub type WildCardPattern<W, A> = pattern::WildCardPattern<W, Expr<A>>;
-
-    /// Basic Shape Pattern
-    pub type BasicShapePattern = pattern::BasicShapePattern<Expr<pattern::BasicShape>>;
 
     /// Vector Expression Type over `String`s
     pub type StringExpr = Expr<String>;
