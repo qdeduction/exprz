@@ -24,4 +24,4 @@ maintenance = { status = "actively-developed" }
 
 [features]
 default = []
-std = []
+alloc = []

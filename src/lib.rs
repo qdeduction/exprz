@@ -9,8 +9,8 @@
 #![forbid(unsafe_code)]
 #![no_std]
 
-#[cfg(feature = "std")]
-extern crate std;
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 use {
     crate::iter::*,
@@ -999,6 +999,138 @@ pub mod parse {
     }
 }
 
+/// Pattern Module
+pub mod pattern {
+    use super::*;
+
+    /// Pattern Trait
+    pub trait Pattern<E>
+    where
+        E: Expression,
+    {
+        /// Check if the pattern matches an atom.
+        fn matches_atom(&self, atom: &E::Atom) -> bool;
+
+        /// Check if the pattern matches a group.
+        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool;
+
+        /// Check if the pattern matches an expression.
+        #[inline]
+        fn matches(&self, expr: &E) -> bool {
+            match expr.cases() {
+                ExprRef::Atom(atom) => self.matches_atom(atom),
+                ExprRef::Group(group) => self.matches_group(group),
+            }
+        }
+    }
+
+    /// Pattern over a fixed `Expression`.
+    pub struct ExpressionPattern<P>(P)
+    where
+        P: Expression;
+
+    impl<P, E> Pattern<E> for ExpressionPattern<P>
+    where
+        P: Expression,
+        E: Expression,
+        P::Atom: PartialEq<E::Atom>,
+    {
+        fn matches_atom(&self, atom: &E::Atom) -> bool {
+            self.0.cases().atom().map_or(false, |a| a == atom)
+        }
+
+        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+            self.0.cases().group().map_or(false, move |g| {
+                eq_by(g.iter(), group.iter(), move |x, y| {
+                    x.borrow().eq(y.borrow())
+                })
+            })
+        }
+    }
+
+    /// Basic Expression Shape
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum BasicShape {
+        /// Atomic Shape
+        Atom,
+
+        /// Grouped Shape
+        Group,
+
+        /// Any Expression Shape
+        Expr,
+    }
+
+    impl Default for BasicShape {
+        #[inline]
+        fn default() -> Self {
+            Self::Expr
+        }
+    }
+
+    /// Pattern over `BasicShape` Expression.
+    pub struct BasicShapePattern<P>(P)
+    where
+        P: Expression<Atom = BasicShape>;
+
+    impl<P> BasicShapePattern<P>
+    where
+        P: Expression<Atom = BasicShape>,
+    {
+        fn matches_atom_inner<E>(pattern: &P, atom: &E::Atom) -> bool
+        where
+            E: Expression,
+        {
+            let _ = atom;
+            pattern
+                .cases()
+                .atom()
+                .map_or(false, |a| *a == BasicShape::Atom || *a == BasicShape::Expr)
+        }
+
+        fn matches_group_inner<'e, E>(
+            pattern: &P,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        ) -> bool
+        where
+            E: Expression,
+        {
+            pattern.cases().group().map_or(false, move |g| {
+                eq_by(g.iter(), group.iter(), move |p, e| {
+                    Self::matches_inner(p.borrow(), e.borrow())
+                })
+            })
+        }
+
+        #[inline]
+        fn matches_inner<E>(pattern: &P, expr: &E) -> bool
+        where
+            E: Expression,
+        {
+            match expr.cases() {
+                ExprRef::Atom(atom) => Self::matches_atom_inner::<E>(pattern, atom),
+                ExprRef::Group(group) => Self::matches_group_inner::<E>(pattern, group),
+            }
+        }
+    }
+
+    impl<P, E> Pattern<E> for BasicShapePattern<P>
+    where
+        P: Expression<Atom = BasicShape>,
+        E: Expression,
+    {
+        #[inline]
+        fn matches_atom(&self, atom: &E::Atom) -> bool {
+            Self::matches_atom_inner::<E>(&self.0, atom)
+        }
+
+        #[inline]
+        fn matches_group<'e>(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'e>) -> bool {
+            Self::matches_group_inner::<E>(&self.0, group)
+        }
+    }
+}
+
 /// Iterator Module
 pub mod iter {
     use core::{borrow::Borrow, slice};
@@ -1046,11 +1178,11 @@ pub mod iter {
         }
     }
 
-    #[cfg(feature = "std")]
-    use std::vec::Vec;
+    #[cfg(feature = "alloc")]
+    use alloc::vec::Vec;
 
-    #[cfg(feature = "std")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+    #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<T> IteratorGen<T> for &Vec<T> {
         type Item<'t>
         where
@@ -1068,8 +1200,8 @@ pub mod iter {
         }
     }
 
-    #[cfg(feature = "std")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+    #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<T> IntoIteratorGen<T> for Vec<T> {
         type IterGen<'t>
         where
@@ -1161,14 +1293,17 @@ pub mod iter {
 }
 
 /// Vector Expressions
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub mod vec {
     use {
-        super::{parse, ExprRef, Expression},
+        super::{parse, pattern, ExprRef, Expression},
+        alloc::{string::String, vec::Vec},
         core::{iter::FromIterator, str::FromStr},
-        std::{string::String, vec::Vec},
     };
+
+    /// Basic Shape Pattern
+    pub type BasicShapePattern = pattern::BasicShapePattern<Expr<pattern::BasicShape>>;
 
     /// Vector Expression Type over `String`s
     pub type StringExpr = Expr<String>;
