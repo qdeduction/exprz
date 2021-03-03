@@ -27,7 +27,7 @@ enum Expr<A> {
 
 _ExprZ_ generalizes this `enum` by defining an `Expression` trait which encompasses the algebraic properties of the above `enum` but which affords the user the flexibility of a more efficient implementation.
 
-_ExprZ_ comes with default implementations of `Expression` which use the Rust `std` library. To access these implementations use the `std` feature on the crate.
+_ExprZ_ comes with default implementations of `Expression` which use the Rust `alloc` library. To access these implementations use the `alloc` feature on the crate.
 
 ### Rust Nightly
 
