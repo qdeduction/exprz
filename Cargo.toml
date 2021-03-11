@@ -1,6 +1,6 @@
 [package]
 name = "exprz"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
 documentation = "https://docs.rs/exprz"
@@ -23,5 +23,29 @@ is-it-maintained-open-issues = { repository = "qdeduction/exprz" }
 maintenance = { status = "actively-developed" }
 
 [features]
+# No default features enabled
 default = []
+
+# Adds allocation
 alloc = []
+
+# [EXPERIMENTAL] Adds buffered expression
+buffered = ["alloc"]
+
+# [EXPERIMENTAL] Adds parsing support
+parse = []
+
+# [EXPERIMENTAL] Adds pattern trait
+pattern = []
+
+# [EXPERIMENTAL] Adds shape trait
+shape = []
+
+# Enables all stable features
+stable = ["alloc"]
+
+# Enables all experimental features
+experimental = ["shape", "pattern", "buffered"]
+
+# Enables all features
+all = ["stable", "experimental"]

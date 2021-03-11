@@ -1,6 +1,3 @@
-// file: src/lib.rs
-// authors: Brandon H. Gomes
-
 //! An Expression Library
 
 #![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
@@ -9,13 +6,16 @@
 #![forbid(unsafe_code)]
 #![no_std]
 
+use {
+    crate::iter::*,
+    core::{borrow::Borrow, iter::FromIterator},
+};
+
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-use {
-    crate::iter::*,
-    core::{borrow::Borrow, iter::FromIterator, str::FromStr},
-};
+#[cfg(feature = "parse")]
+use core::str::FromStr;
 
 /// Package Version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -61,6 +61,8 @@ where
     }
 
     /// Parse a string into an `Expression`.
+    #[cfg(feature = "parse")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
     #[inline]
     fn from_str(s: &str) -> parse::Result<Self>
     where
@@ -179,6 +181,8 @@ where
     }
 
     /// Check if expression matches given `Pattern`.
+    #[cfg(feature = "pattern")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
     fn matches<P>(&self, pattern: P) -> bool
     where
@@ -188,6 +192,8 @@ where
     }
 
     /// Check if `self` matches an equality pattern.
+    #[cfg(feature = "pattern")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
     fn matches_equal<P>(&self, pattern: &P) -> bool
     where
@@ -198,6 +204,8 @@ where
     }
 
     /// Check if `self` matches a subexpression pattern.
+    #[cfg(feature = "pattern")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
     fn matches_subexpression<P>(&self, pattern: &P) -> bool
     where
@@ -208,6 +216,8 @@ where
     }
 
     /// Check if `self` matches a basic shape pattern.
+    #[cfg(feature = "pattern")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
     fn matches_basic_shape<P>(&self, pattern: &P) -> bool
     where
@@ -218,6 +228,8 @@ where
     }
 
     /// Check if `self` matches a wildcard expression.
+    #[cfg(feature = "pattern")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
     fn matches_wildcard<W, P>(&self, is_wildcard: W, pattern: &P) -> bool
     where
@@ -317,14 +329,14 @@ where
     #[must_use]
     #[inline]
     pub fn is_atom(&self) -> bool {
-        matches!(self, ExprRef::Atom(_))
+        matches!(self, Self::Atom(_))
     }
 
     /// Check if the `ExprRef` is a grouped expression `IteratorGen`.
     #[must_use]
     #[inline]
     pub fn is_group(&self) -> bool {
-        matches!(self, ExprRef::Group(_))
+        matches!(self, Self::Group(_))
     }
 
     /// Converts from an `ExprRef<E>` to an `Option<&E::Atom>`.
@@ -332,7 +344,7 @@ where
     #[inline]
     pub fn atom(self) -> Option<&'e E::Atom> {
         match self {
-            ExprRef::Atom(atom) => Some(atom),
+            Self::Atom(atom) => Some(atom),
             _ => None,
         }
     }
@@ -342,7 +354,7 @@ where
     #[inline]
     pub fn group(self) -> Option<<E::Group as IntoIteratorGen<E>>::IterGen<'e>> {
         match self {
-            ExprRef::Group(group) => Some(group),
+            Self::Group(group) => Some(group),
             _ => None,
         }
     }
@@ -377,13 +389,13 @@ where
         E::Atom: PartialEq<R::Atom>,
     {
         match self {
-            ExprRef::Atom(atom) => match other {
+            Self::Atom(atom) => match other {
                 ExprRef::Atom(other) => atom == other,
                 ExprRef::Group(other) => other
                     .iter()
                     .any(move |e| self.is_subexpression(&e.borrow().cases())),
             },
-            ExprRef::Group(group) => match other {
+            Self::Group(group) => match other {
                 ExprRef::Atom(_) => false,
                 ExprRef::Group(other) => {
                     other
@@ -416,8 +428,8 @@ where
         F: FnMut(&E::Atom) -> O::Atom,
     {
         match self {
-            ExprRef::Atom(atom) => O::from_atom(f(atom)),
-            ExprRef::Group(group) => O::from_group(
+            Self::Atom(atom) => O::from_atom(f(atom)),
+            Self::Group(group) => O::from_group(
                 group
                     .iter()
                     .map(move |e| e.borrow().cases().map_ref_inner(f))
@@ -443,8 +455,8 @@ where
         F: FnMut(&E::Atom) -> E,
     {
         match self {
-            ExprRef::Atom(atom) => f(atom),
-            ExprRef::Group(group) => E::from_group(
+            Self::Atom(atom) => f(atom),
+            Self::Group(group) => E::from_group(
                 group
                     .iter()
                     .map(move |e| e.borrow().cases().substitute_ref_inner(f))
@@ -463,8 +475,8 @@ where
     /// Check if two `Expression`s are equal using `PartialEq` on their `Atom`s.
     fn eq(&self, other: &ExprRef<'r, R>) -> bool {
         match (self, other) {
-            (ExprRef::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
-            (ExprRef::Group(lhs), ExprRef::Group(rhs)) => {
+            (Self::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
+            (Self::Group(lhs), ExprRef::Group(rhs)) => {
                 eq_by(lhs.iter(), rhs.iter(), move |l, r| {
                     l.borrow().eq(r.borrow())
                 })
@@ -475,7 +487,7 @@ where
 }
 
 /// Canonical Concrete `Expression` Type
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Expr<E>
 where
     E: Expression,
@@ -505,6 +517,8 @@ where
     }
 }
 
+#[cfg(feature = "parse")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
 impl<E> FromStr for Expr<E>
 where
     E: Expression,
@@ -739,6 +753,8 @@ where
 */
 
 /// Parsing Module
+#[cfg(feature = "parse")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
 pub mod parse {
     use {
         super::Expression,
@@ -749,7 +765,7 @@ pub mod parse {
     };
 
     /// `Expression` Parsing Error
-    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub enum Error {
         /// Multiple expressions at top level
         MultiExpr,
@@ -783,7 +799,7 @@ pub mod parse {
     pub type Result<T> = result::Result<T, Error>;
 
     /// Meaningful Symbols for `Expression` Parsing
-    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub enum SymbolType {
         /// Whitespace
         Whitespace,
@@ -1074,7 +1090,59 @@ pub mod parse {
     }
 }
 
+/// Shape Module
+#[cfg(feature = "shape")]
+#[cfg_attr(docsrs, doc(cfg(feature = "shape")))]
+pub mod shape {
+    use super::*;
+
+    /// Shape Trait
+    pub trait Shape<E>
+    where
+        Self: Sized,
+        E: Expression,
+    {
+        /// Shape Error
+        type Error;
+
+        /// Checks if the given atom matches the shape.
+        fn matches_atom(&self, atom: &E::Atom) -> Result<(), Self::Error>;
+
+        /// Checks if the given group matches the shape.
+        fn matches_group(
+            &self,
+            group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>,
+        ) -> Result<(), Self::Error>;
+
+        /// Checks if the given expression matches the shape.
+        #[inline]
+        fn matches(&self, expr: &E) -> Result<(), Self::Error> {
+            match expr.cases() {
+                ExprRef::Atom(atom) => self.matches_atom(atom),
+                ExprRef::Group(group) => self.matches_group(group),
+            }
+        }
+
+        /// Converts the given atom into the shape.
+        fn convert_atom(&self, atom: E::Atom) -> Result<Self, Self::Error>;
+
+        /// Converts the given group into the shape.
+        fn convert_group(&self, group: E::Group) -> Result<Self, Self::Error>;
+
+        /// Converts the given expression into the shape.
+        #[inline]
+        fn convert(&self, expr: E) -> Result<Self, Self::Error> {
+            match expr.into() {
+                Expr::Atom(atom) => self.convert_atom(atom),
+                Expr::Group(group) => self.convert_group(group),
+            }
+        }
+    }
+}
+
 /// Pattern Module
+#[cfg(feature = "pattern")]
+#[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
 pub mod pattern {
     use super::*;
 
@@ -1121,7 +1189,7 @@ pub mod pattern {
     }
 
     /// Equal Expression Pattern
-    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct EqualExpressionPattern<'p, P>(&'p P)
     where
         P: Expression;
@@ -1155,7 +1223,7 @@ pub mod pattern {
     }
 
     /// Sub-Expression Pattern
-    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct SubExpressionPattern<'p, P>(&'p P)
     where
         P: Expression;
@@ -1173,9 +1241,9 @@ pub mod pattern {
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases() {
-                ExprRef::Atom(pattern_atom) => pattern_atom == atom,
-                ExprRef::Group(_) => false,
+            match pattern.cases().atom() {
+                Some(pattern_atom) => pattern_atom == atom,
+                _ => false,
             }
         }
 
@@ -1187,11 +1255,8 @@ pub mod pattern {
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases() {
-                ExprRef::Atom(_) => group
-                    .iter()
-                    .any(move |e| Self::matches(pattern, e.borrow())),
-                ExprRef::Group(pattern_group) => {
+            match pattern.cases().group() {
+                Some(pattern_group) => {
                     group
                         .iter()
                         .any(move |e| Self::matches(pattern, e.borrow()))
@@ -1199,6 +1264,9 @@ pub mod pattern {
                             p.borrow().eq(e.borrow())
                         })
                 }
+                _ => group
+                    .iter()
+                    .any(move |e| Self::matches(pattern, e.borrow())),
             }
         }
 
@@ -1238,7 +1306,7 @@ pub mod pattern {
     }
 
     /// Wild Card Pattern
-    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct WildCardPattern<'p, W, P>(W, &'p P)
     where
         P: Expression,
@@ -1259,9 +1327,9 @@ pub mod pattern {
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases() {
-                ExprRef::Atom(pattern_atom) => is_wildcard(pattern_atom) || pattern_atom == atom,
-                ExprRef::Group(_) => false,
+            match pattern.cases().atom() {
+                Some(pattern_atom) => is_wildcard(pattern_atom) || pattern_atom == atom,
+                _ => false,
             }
         }
 
@@ -1318,13 +1386,11 @@ pub mod pattern {
                             .atom()
                             .map_or(false, move |a| pattern_atom == a)
                 }
-                ExprRef::Group(pattern_group) => match expr.cases() {
-                    ExprRef::Atom(_) => false,
-                    ExprRef::Group(group) => {
-                        eq_by(pattern_group.iter(), group.iter(), move |p, e| {
-                            Self::wildcard_equality(is_wildcard, p.borrow(), e.borrow())
-                        })
-                    }
+                ExprRef::Group(pattern_group) => match expr.cases().group() {
+                    Some(group) => eq_by(pattern_group.iter(), group.iter(), move |p, e| {
+                        Self::wildcard_equality(is_wildcard, p.borrow(), e.borrow())
+                    }),
+                    _ => false,
                 },
             }
         }
@@ -1411,7 +1477,7 @@ pub mod pattern {
     }
 
     /// Pattern over `BasicShape` Expression.
-    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct BasicShapePattern<'p, P>(&'p P)
     where
         P: Expression<Atom = BasicShape>;
@@ -1652,19 +1718,15 @@ pub mod iter {
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub mod vec {
     use {
-        super::{
-            iter::{IntoIteratorGen, IteratorGen},
-            parse, ExprRef, Expression, HasGroupType,
-        },
-        alloc::{string::String, vec::Vec},
-        core::{iter::FromIterator, slice, str::FromStr},
+        super::*,
+        alloc::{slice, string::String, vec::Vec},
     };
 
     /// Vector Expression Type over `String`s
     pub type StringExpr = Expr<String>;
 
     /// Vector Expression Type
-    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     pub enum Expr<A = ()> {
         /// Atomic expression
         Atom(A),
@@ -1714,6 +1776,8 @@ pub mod vec {
         }
     }
 
+    #[cfg(feature = "parse")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
     impl<A> FromStr for Expr<A>
     where
         A: FromIterator<char>,
@@ -1727,10 +1791,10 @@ pub mod vec {
     }
 
     /// Vector `MultiExpression` over `String`s
-    pub type StringMultiExpr<G> = MultiExpr<String, G>;
+    pub type StringMultiExpr<G = ()> = MultiExpr<String, G>;
 
     /// Vector `MultiExpression` Type
-    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     pub enum MultiExpr<A = (), G = ()> {
         /// Atomic Expression
         Atom(A),
@@ -1834,6 +1898,119 @@ pub mod vec {
         #[inline]
         fn group_type(&self) -> &'e G {
             self.1
+        }
+    }
+}
+
+/// Buffered Expressions
+#[cfg(feature = "buffered")]
+#[cfg_attr(docsrs, doc(cfg(feature = "buffered")))]
+pub mod buffered {
+    use {super::*, alloc::vec::Vec};
+
+    /// Buffered Expression Type
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct Expr<T, LengthIndex = usize, ShapeIndex = usize> {
+        atoms: Vec<T>,
+        lengths: Vec<LengthIndex>,
+        shape: Vec<ShapeIndex>,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ExprGroup<T> {
+        inner: Expr<T>,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ExprView<'t, T> {
+        base: &'t Expr<T>,
+        index: usize,
+    }
+
+    impl<'t, T> Borrow<Expr<T>> for ExprView<'t, T> {
+        fn borrow(&self) -> &Expr<T> {
+            todo!()
+        }
+    }
+
+    pub struct ExprViewIterator<'t, T> {
+        _base: &'t Expr<T>,
+        index: usize,
+    }
+
+    impl<'t, T> ExprViewIterator<'t, T> {
+        fn new(base: &'t Expr<T>) -> Self {
+            Self {
+                _base: base,
+                index: 0,
+            }
+        }
+    }
+
+    impl<'t, T> Iterator for ExprViewIterator<'t, T> {
+        type Item = ExprView<'t, T>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.index += 1;
+            todo!()
+        }
+    }
+
+    impl<T> IteratorGen<Expr<T>> for &Expr<T> {
+        type Item<'t>
+        where
+            T: 't,
+        = ExprView<'t, T>;
+
+        type Iter<'t>
+        where
+            T: 't,
+        = ExprViewIterator<'t, T>;
+
+        fn iter(&self) -> Self::Iter<'_> {
+            ExprViewIterator::new(self)
+        }
+    }
+
+    impl<T> IntoIteratorGen<Expr<T>> for ExprGroup<T> {
+        type IterGen<'t>
+        where
+            T: 't,
+        = &'t Expr<T>;
+
+        #[inline]
+        fn gen(&self) -> Self::IterGen<'_> {
+            &self.inner
+        }
+    }
+
+    impl<T> Expression for Expr<T> {
+        type Atom = Vec<T>;
+
+        type Group = ExprGroup<T>;
+
+        fn cases(&self) -> ExprRef<Self> {
+            todo!()
+        }
+
+        fn from_atom(atom: <Self as Expression>::Atom) -> Self {
+            Self {
+                atoms: atom,
+                lengths: Vec::default(),
+                shape: Vec::default(),
+            }
+        }
+
+        fn from_group(group: <Self as Expression>::Group) -> Self {
+            group.inner
+        }
+    }
+
+    impl<T> From<Expr<T>> for super::Expr<Expr<T>> {
+        #[inline]
+        fn from(expr: Expr<T>) -> Self {
+            let _ = expr;
+            todo!()
         }
     }
 }
