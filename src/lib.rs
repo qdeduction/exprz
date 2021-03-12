@@ -1099,42 +1099,41 @@ pub mod shape {
     /// Shape Trait
     pub trait Shape<E>
     where
-        Self: Sized,
+        Self: Sized + Into<E>,
         E: Expression,
     {
         /// Shape Error
         type Error;
 
         /// Checks if the given atom matches the shape.
-        fn matches_atom(&self, atom: &E::Atom) -> Result<(), Self::Error>;
+        fn matches_atom(atom: &E::Atom) -> Result<(), Self::Error>;
 
         /// Checks if the given group matches the shape.
         fn matches_group(
-            &self,
             group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>,
         ) -> Result<(), Self::Error>;
 
         /// Checks if the given expression matches the shape.
         #[inline]
-        fn matches(&self, expr: &E) -> Result<(), Self::Error> {
+        fn matches(expr: &E) -> Result<(), Self::Error> {
             match expr.cases() {
-                ExprRef::Atom(atom) => self.matches_atom(atom),
-                ExprRef::Group(group) => self.matches_group(group),
+                ExprRef::Atom(atom) => Self::matches_atom(atom),
+                ExprRef::Group(group) => Self::matches_group(group),
             }
         }
 
         /// Converts the given atom into the shape.
-        fn convert_atom(&self, atom: E::Atom) -> Result<Self, Self::Error>;
+        fn convert_atom(atom: E::Atom) -> Result<Self, Self::Error>;
 
         /// Converts the given group into the shape.
-        fn convert_group(&self, group: E::Group) -> Result<Self, Self::Error>;
+        fn convert_group(group: E::Group) -> Result<Self, Self::Error>;
 
         /// Converts the given expression into the shape.
         #[inline]
-        fn convert(&self, expr: E) -> Result<Self, Self::Error> {
+        fn convert(expr: E) -> Result<Self, Self::Error> {
             match expr.into() {
-                Expr::Atom(atom) => self.convert_atom(atom),
-                Expr::Group(group) => self.convert_group(group),
+                Expr::Atom(atom) => Self::convert_atom(atom),
+                Expr::Group(group) => Self::convert_group(group),
             }
         }
     }
