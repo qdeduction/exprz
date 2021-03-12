@@ -1145,7 +1145,9 @@ pub mod shape {
     /// if it is impossible or inefficient to implement the stronger contract.
     pub trait Shape<E>
     where
-        Self: Into<Expr<E>> + TryFrom<Expr<E>> + Matcher<E>,
+        Self: Into<Expr<E>>
+            + TryFrom<Expr<E>>
+            + Matcher<E, Error = <Self as TryFrom<Expr<E>>>::Error>,
         E: Expression,
     {
     }
