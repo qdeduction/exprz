@@ -1093,7 +1093,10 @@ pub mod parse {
 #[cfg(feature = "shape")]
 #[cfg_attr(docsrs, doc(cfg(feature = "shape")))]
 pub mod shape {
-    use {super::*, core::convert::TryFrom};
+    use {
+        super::*,
+        core::convert::{TryFrom, TryInto},
+    };
 
     // TODO: how to resolve this with the `Pattern` trait?
 
@@ -1145,11 +1148,26 @@ pub mod shape {
     /// if it is impossible or inefficient to implement the stronger contract.
     pub trait Shape<E>
     where
-        Self: Into<Expr<E>>
-            + TryFrom<Expr<E>>
-            + Matcher<E, Error = <Self as TryFrom<Expr<E>>>::Error>,
         E: Expression,
+        Self: Into<Expr<E>> + Matcher<E> + TryFrom<Expr<E>, Error = <Self as Matcher<E>>::Error>,
     {
+        /// Parses an `Expression::Atom` into `Self`.
+        #[inline]
+        fn parse_atom(atom: E::Atom) -> Result<Self, <Self as Matcher<E>>::Error> {
+            Expr::Atom(atom).try_into()
+        }
+
+        /// Parses an `Expression::Group` into `Self`.
+        #[inline]
+        fn parse_group(group: E::Group) -> Result<Self, <Self as Matcher<E>>::Error> {
+            Expr::Group(group).try_into()
+        }
+
+        /// Parses an `Expression` into `Self`.
+        #[inline]
+        fn parse_expr(expr: E) -> Result<Self, <Self as Matcher<E>>::Error> {
+            expr.into().try_into()
+        }
     }
 }
 
