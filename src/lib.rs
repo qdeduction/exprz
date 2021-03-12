@@ -1099,8 +1099,8 @@ pub mod shape {
     /// Shape Trait
     pub trait Shape<E>
     where
-        Self: Sized + Into<E>,
-        E: Expression,
+        Self: Sized,
+        E: Expression + From<Self>,
     {
         /// Shape Error
         type Error;
