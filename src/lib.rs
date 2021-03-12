@@ -39,16 +39,16 @@ where
     /// Group Expression Type
     type Group: IntoIteratorGen<Self>;
 
-    /// Get a reference to the underlying `Expression` type.
+    /// Gets a reference to the underlying `Expression` type.
     fn cases(&self) -> ExprRef<Self>;
 
-    /// Build an `Expression` from an atomic element.
+    /// Builds an `Expression` from an atomic element.
     fn from_atom(atom: Self::Atom) -> Self;
 
-    /// Build an `Expression` from a grouped expression.
+    /// Builds an `Expression` from a grouped expression.
     fn from_group(group: Self::Group) -> Self;
 
-    /// Convert from the [canonical enumeration].
+    /// Converts from the [canonical enumeration].
     ///
     /// [canonical enumeration]: enum.Expr.html
     #[must_use]
@@ -60,9 +60,10 @@ where
         }
     }
 
-    /// Parse a string into an `Expression`.
+    /// Parses a string into an `Expression`.
     #[cfg(feature = "parse")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
+    #[must_use]
     #[inline]
     fn from_str(s: &str) -> parse::Result<Self>
     where
@@ -72,14 +73,14 @@ where
         parse::from_str(s)
     }
 
-    /// Check if the `Expression` is atomic.
+    /// Checks if the `Expression` is atomic.
     #[must_use]
     #[inline]
     fn is_atom(&self) -> bool {
         self.cases().is_atom()
     }
 
-    /// Check if the `Expression` is a grouped expression.
+    /// Checks if the `Expression` is a grouped expression.
     #[must_use]
     #[inline]
     fn is_group(&self) -> bool {
@@ -122,7 +123,7 @@ where
         self.into().unwrap_group()
     }
 
-    /// Build an empty atomic expression.
+    /// Builds an empty atomic expression.
     #[inline]
     fn empty_atom<T>() -> Self
     where
@@ -131,7 +132,7 @@ where
         Self::from_atom(None.into_iter().collect())
     }
 
-    /// Build an empty grouped expression.
+    /// Builds an empty grouped expression.
     #[inline]
     fn empty_group() -> Self
     where
@@ -140,7 +141,7 @@ where
         Self::from_group(None.into_iter().collect())
     }
 
-    /// Get the default value of an `Expression`: the empty group.
+    /// Gets the default value of an `Expression`: the empty group.
     #[inline]
     fn default() -> Self
     where
@@ -149,7 +150,7 @@ where
         Self::empty_group()
     }
 
-    /// Clone an `Expression` that has `Clone`-able `Atom`s.
+    /// Clones an `Expression` that has `Clone`-able `Atom`s.
     #[inline]
     fn clone(&self) -> Self
     where
@@ -159,7 +160,7 @@ where
         Self::from_expr(self.cases().into())
     }
 
-    /// Check if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    /// Checks if two `Expression`s are equal using `PartialEq` on their `Atom`s.
     #[inline]
     fn eq<E>(&self, other: &E) -> bool
     where
@@ -169,7 +170,7 @@ where
         self.cases() == other.cases()
     }
 
-    /// Check if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
+    /// Checks if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
     /// `Atom`s.
     #[inline]
     fn is_subexpression<E>(&self, other: &E) -> bool
@@ -180,7 +181,7 @@ where
         self.cases().is_subexpression(&other.cases())
     }
 
-    /// Check if expression matches given `Pattern`.
+    /// Checks if expression matches given `Pattern`.
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -191,7 +192,7 @@ where
         pattern.matches(self)
     }
 
-    /// Check if `self` matches an equality pattern.
+    /// Checks if `self` matches an equality pattern.
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -203,7 +204,7 @@ where
         self.matches(pattern::EqualExpressionPattern::new(pattern))
     }
 
-    /// Check if `self` matches a subexpression pattern.
+    /// Checks if `self` matches a subexpression pattern.
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -215,7 +216,7 @@ where
         self.matches(pattern::SubExpressionPattern::new(pattern))
     }
 
-    /// Check if `self` matches a basic shape pattern.
+    /// Checks if `self` matches a basic shape pattern.
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -227,7 +228,7 @@ where
         self.matches(pattern::BasicShapePattern::new(pattern))
     }
 
-    /// Check if `self` matches a wildcard expression.
+    /// Checks if `self` matches a wildcard expression.
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -240,7 +241,7 @@ where
         self.matches(pattern::WildCardPattern::new(is_wildcard, pattern))
     }
 
-    /// Extend a function on `Atom`s to a function on `Expression`s.
+    /// Extends a function on `Atom`s to a function on `Expression`s.
     #[inline]
     fn map<E, F>(self, f: F) -> E
     where
@@ -252,7 +253,7 @@ where
         self.into().map(f)
     }
 
-    /// Extend a function on `&Atom`s to a function on `&Expression`s.
+    /// Extends a function on `&Atom`s to a function on `&Expression`s.
     #[inline]
     fn map_ref<E, F>(&self, f: F) -> E
     where
@@ -263,7 +264,7 @@ where
         self.cases().map_ref(f)
     }
 
-    /// Substitute an `Expression` into each `Atom` of `self`.
+    /// Substitutes an `Expression` into each `Atom` of `self`.
     #[inline]
     fn substitute<F>(self, f: F) -> Self
     where
@@ -273,7 +274,7 @@ where
         self.into().substitute(f)
     }
 
-    /// Substitute an `Expression` into each `Atom` of `&self`.
+    /// Substitutes an `Expression` into each `Atom` of `&self`.
     #[inline]
     fn substitute_ref<F>(&self, f: F) -> Self
     where
@@ -289,7 +290,7 @@ pub trait HasGroupType<'e, E, T>
 where
     E: Expression,
 {
-    /// Get underlying group type.
+    /// Gets underlying group type.
     fn group_type(&self) -> &'e T;
 }
 
@@ -303,7 +304,7 @@ where
     /// Group Type
     type GroupType;
 
-    /// Get Group Type if `Expression` is a group.
+    /// Gets `Self::GroupType` if `Expression` is a group.
     fn group_type(&self) -> Option<&Self::GroupType> {
         self.cases().group().map(move |g| g.group_type())
     }
@@ -325,14 +326,14 @@ impl<'e, E> ExprRef<'e, E>
 where
     E: Expression,
 {
-    /// Check if the `ExprRef` is atomic.
+    /// Checks if the `ExprRef` is atomic.
     #[must_use]
     #[inline]
     pub fn is_atom(&self) -> bool {
         matches!(self, Self::Atom(_))
     }
 
-    /// Check if the `ExprRef` is a grouped expression `IteratorGen`.
+    /// Checks if the `ExprRef` is a grouped expression `IteratorGen`.
     #[must_use]
     #[inline]
     pub fn is_group(&self) -> bool {
@@ -381,7 +382,7 @@ where
         self.group().unwrap()
     }
 
-    /// Check if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
+    /// Checks if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
     /// `Atom`s.
     pub fn is_subexpression<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
     where
@@ -409,7 +410,7 @@ where
         }
     }
 
-    /// Extend a function on `&Atom`s to a function on `&Expression`s.
+    /// Extends a function on `&Atom`s to a function on `&Expression`s.
     #[inline]
     pub fn map_ref<O, F>(&self, mut f: F) -> O
     where
@@ -438,7 +439,7 @@ where
         }
     }
 
-    /// Substitute an `Expression` into each `Atom` of `&self`.
+    /// Substitutes an `Expression` into each `Atom` of `&self`.
     #[inline]
     pub fn substitute_ref<F>(&self, mut f: F) -> E
     where
@@ -472,7 +473,7 @@ where
     R: Expression,
     L::Atom: PartialEq<R::Atom>,
 {
-    /// Check if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    /// Checks if two `Expression`s are equal using `PartialEq` on their `Atom`s.
     fn eq(&self, other: &ExprRef<'r, R>) -> bool {
         match (self, other) {
             (Self::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
@@ -537,14 +538,14 @@ impl<E> Expr<E>
 where
     E: Expression,
 {
-    /// Check if the `Expr` is atomic.
+    /// Checks if the `Expr` is atomic.
     #[must_use]
     #[inline]
     pub fn is_atom(&self) -> bool {
         matches!(self, Expr::Atom(_))
     }
 
-    /// Check if the `Expr` is a grouped expression.
+    /// Checks if the `Expr` is a grouped expression.
     #[must_use]
     #[inline]
     pub fn is_group(&self) -> bool {
@@ -593,7 +594,7 @@ where
         self.group().unwrap()
     }
 
-    /// Extend a function on `Atom`s to a function on `Expression`s.
+    /// Extends a function on `Atom`s to a function on `Expression`s.
     #[inline]
     pub fn map<O, F>(self, mut f: F) -> O
     where
@@ -623,7 +624,7 @@ where
         }
     }
 
-    /// Substitute an `Expression` into each `Atom` of `self`.
+    /// Substitutes an `Expression` into each `Atom` of `self`.
     #[inline]
     pub fn substitute<F>(self, mut f: F) -> E
     where
@@ -655,9 +656,7 @@ where
     E: Expression,
     E::Group: FromIterator<E>,
 {
-    /// Default `Expr`
-    ///
-    /// The default expression is the empty group expression.
+    /// Returns the empty group expression.
     fn default() -> Self {
         E::default().into()
     }
@@ -817,7 +816,7 @@ pub mod parse {
         Other,
     }
 
-    /// Parse an `Expression` from an `Iterator` over `collect`-able symbols.
+    /// Parses an `Expression` from an `Iterator` over `collect`-able symbols.
     ///
     /// This function consumes the iterator expecting nothing before or after the parsed
     /// `Expression`.
@@ -839,7 +838,7 @@ pub mod parse {
             .unwrap_or(expr)
     }
 
-    /// Try to parse an `Expression` from an `Iterator` over `collect`-able symbols.
+    /// Tries to parse an `Expression` from an `Iterator` over `collect`-able symbols.
     ///
     /// The iterator may still have elements remaining after parsing one `Group`.
     pub fn parse_continue<I, F, E>(iter: &mut Peekable<I>, classify: F) -> Result<E>
@@ -862,7 +861,7 @@ pub mod parse {
         }
     }
 
-    /// Parse a `Group` from an `Iterator` over `collect`-able symbols.
+    /// Parses a `Group` from an `Iterator` over `collect`-able symbols.
     ///
     /// This function consumes the iterator expecting nothing before or after the parsed `Group`.
     pub fn parse_group<I, F, E>(iter: I, classify: F) -> Result<E::Group>
@@ -880,7 +879,7 @@ pub mod parse {
             .unwrap_or(group)
     }
 
-    /// Try to parse a `Group` from an `Iterator` over `collect`-able symbols.
+    /// Tries to parse a `Group` from an `Iterator` over `collect`-able symbols.
     ///
     /// The iterator may still have elements remaining after parsing one `Group`.
     pub fn parse_group_continue<I, F, E>(iter: &mut Peekable<I>, classify: &F) -> Result<E::Group>
@@ -939,7 +938,7 @@ pub mod parse {
         }
     }
 
-    /// Parse an `Atom` from an `Iterator` over `collect`-able symbols.
+    /// Parses an `Atom` from an `Iterator` over `collect`-able symbols.
     ///
     /// This function consumes the iterator expecting nothing before or after the parsed `Atom`.
     pub fn parse_atom<I, F, A>(iter: I, classify: F) -> Result<A>
@@ -963,7 +962,7 @@ pub mod parse {
             .unwrap_or(atom)
     }
 
-    /// Try to parse an `Atom` from an `Iterator` over `collect`-able symbols.
+    /// Tries to parse an `Atom` from an `Iterator` over `collect`-able symbols.
     ///
     /// The iterator may still have elements remaining after parsing one `Atom`.
     pub fn parse_atom_continue<I, F, A>(iter: &mut Peekable<I>, classify: &F) -> Result<A>
@@ -1010,7 +1009,7 @@ pub mod parse {
         }
     }
 
-    /// Default classification for the `char` type.
+    /// Returns the default classification for the `char` type.
     #[inline]
     pub fn default_char_classification(c: &char) -> SymbolType {
         match c {
@@ -1027,7 +1026,7 @@ pub mod parse {
         }
     }
 
-    /// Parse a string-like `Expression` from an iterator over characters.
+    /// Parses a string-like `Expression` from an iterator over characters.
     #[inline]
     pub fn from_chars<I, E>(iter: I) -> Result<E>
     where
@@ -1040,7 +1039,7 @@ pub mod parse {
         parse(iter, default_char_classification)
     }
 
-    /// Parse a string-like `Expression` from a string.
+    /// Parses a string-like `Expression` from a string.
     #[inline]
     pub fn from_str<S, E>(s: S) -> Result<E>
     where
@@ -1053,7 +1052,7 @@ pub mod parse {
         from_chars(s.as_ref().chars())
     }
 
-    /// Parse a string-like expression `Group` from an iterator over characters.
+    /// Parses a string-like expression `Group` from an iterator over characters.
     ///
     /// # Panics
     ///
@@ -1071,7 +1070,7 @@ pub mod parse {
         from_chars(Some('(').into_iter().chain(iter).chain(Some(')'))).map(E::unwrap_group)
     }
 
-    /// Parse a string-like expression `Group` from a string.
+    /// Parses a string-like expression `Group` from a string.
     ///
     /// # Panics
     ///
@@ -1095,6 +1094,8 @@ pub mod parse {
 #[cfg_attr(docsrs, doc(cfg(feature = "shape")))]
 pub mod shape {
     use {super::*, core::convert::TryFrom};
+
+    // TODO: how to resolve this with the `Pattern` trait?
 
     /// Shape Trait
     ///
@@ -1146,18 +1147,20 @@ pub mod shape {
 pub mod pattern {
     use super::*;
 
+    // TODO: how to resolve this with the `Shape` trait?
+
     /// Pattern Trait
     pub trait Pattern<E>
     where
         E: Expression,
     {
-        /// Check if the pattern matches an atom.
+        /// Checks if the pattern matches an atom.
         fn matches_atom(&self, atom: &E::Atom) -> bool;
 
-        /// Check if the pattern matches a group.
+        /// Checks if the pattern matches a group.
         fn matches_group(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool;
 
-        /// Check if the pattern matches an expression.
+        /// Checks if the pattern matches an expression.
         #[inline]
         fn matches(&self, expr: &E) -> bool {
             match expr.cases() {
@@ -1172,13 +1175,13 @@ pub mod pattern {
     where
         E: Expression,
     {
-        /// Check if the pattern matches an atom.
+        /// Checks if the pattern matches an atom.
         fn matches_atom(&mut self, atom: &E::Atom) -> bool;
 
-        /// Check if the pattern matches a group.
+        /// Checks if the pattern matches a group.
         fn matches_group(&mut self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool;
 
-        /// Check if the pattern matches an expression.
+        /// Checks if the pattern matches an expression.
         #[inline]
         fn matches(&mut self, expr: &E) -> bool {
             match expr.cases() {
@@ -1463,13 +1466,13 @@ pub mod pattern {
     }
 
     impl BasicShape {
-        /// Check if the shape would match an atom.
+        /// Checks if the shape would match an atom.
         #[inline]
         pub fn matches_atom(&self) -> bool {
             *self == Self::Expr || *self == Self::Atom
         }
 
-        /// Check if the shape would match a group.
+        /// Checks if the shape would match a group.
         #[inline]
         pub fn matches_group(&self) -> bool {
             *self == Self::Expr || *self == Self::Group
@@ -1567,7 +1570,7 @@ pub mod iter {
         where
             T: 't;
 
-        /// Get a new `Iterator`.
+        /// Gets a new `Iterator`.
         fn iter(&self) -> Self::Iter<'_>;
     }
 
@@ -1578,7 +1581,7 @@ pub mod iter {
         where
             T: 't;
 
-        /// Get a new `IteratorGen`.
+        /// Gets a new `IteratorGen`.
         fn gen(&self) -> Self::IterGen<'_>;
     }
 
@@ -1686,7 +1689,7 @@ pub mod iter {
     }
     */
 
-    /// Check if two iterator are equal pointwise.
+    /// Checks if two iterators are equal pointwise.
     pub fn eq_by<L, R, F>(lhs: L, rhs: R, mut eq: F) -> bool
     where
         L: IntoIterator,
