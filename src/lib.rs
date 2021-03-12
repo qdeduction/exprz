@@ -1097,28 +1097,14 @@ pub mod shape {
 
     // TODO: how to resolve this with the `Pattern` trait?
 
-    /// Shape Trait
-    ///
-    /// # Contract
-    ///
-    /// The following should hold for all `expr: E`:
-    ///
-    /// ```
-    /// matches(&expr).err() == expr.try_into().err()
-    /// ```
-    ///
-    /// but can be weakend to the following,
-    ///
-    /// ```
-    /// matches(&expr).is_err() == expr.try_into().is_err()
-    /// ```
-    ///
-    /// if it is impossible or inefficient to implement the stronger contract.
-    pub trait Shape<E>
+    /// Matcher Trait
+    pub trait Matcher<E>
     where
-        Self: Into<Expr<E>> + TryFrom<Expr<E>>,
         E: Expression,
     {
+        /// Match Error Type
+        type Error;
+
         /// Checks if the given atom matches the shape.
         #[must_use]
         fn matches_atom(atom: &E::Atom) -> Result<(), Self::Error>;
@@ -1138,6 +1124,30 @@ pub mod shape {
                 ExprRef::Group(group) => Self::matches_group(group),
             }
         }
+    }
+
+    /// Shape Trait
+    ///
+    /// # Contract
+    ///
+    /// The following should hold for all `expr: E`:
+    ///
+    /// ```
+    /// matches(&expr).err() == expr.try_into().err()
+    /// ```
+    ///
+    /// but can be weakend to the following,
+    ///
+    /// ```
+    /// matches(&expr).is_err() == expr.try_into().is_err()
+    /// ```
+    ///
+    /// if it is impossible or inefficient to implement the stronger contract.
+    pub trait Shape<E>
+    where
+        Self: Into<Expr<E>> + TryFrom<Expr<E>> + Matcher<E>,
+        E: Expression,
+    {
     }
 }
 

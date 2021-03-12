@@ -1,6 +1,6 @@
 [package]
 name = "exprz"
-version = "0.0.10"
+version = "0.0.11"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
 documentation = "https://docs.rs/exprz"
