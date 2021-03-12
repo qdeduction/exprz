@@ -1094,46 +1094,47 @@ pub mod parse {
 #[cfg(feature = "shape")]
 #[cfg_attr(docsrs, doc(cfg(feature = "shape")))]
 pub mod shape {
-    use super::*;
+    use {super::*, core::convert::TryFrom};
 
     /// Shape Trait
+    ///
+    /// # Contract
+    ///
+    /// The following should hold for all `expr: E`:
+    ///
+    /// ```
+    /// matches(&expr).err() == expr.try_into().err()
+    /// ```
+    ///
+    /// but can be weakend to the following,
+    ///
+    /// ```
+    /// matches(&expr).is_err() == expr.try_into().is_err()
+    /// ```
+    ///
+    /// if it is impossible or inefficient to implement the stronger contract.
     pub trait Shape<E>
     where
-        Self: Sized + Into<Expr<E>>,
+        Self: Into<Expr<E>> + TryFrom<Expr<E>>,
         E: Expression,
     {
-        /// Shape Error
-        type Error;
-
         /// Checks if the given atom matches the shape.
+        #[must_use]
         fn matches_atom(atom: &E::Atom) -> Result<(), Self::Error>;
 
         /// Checks if the given group matches the shape.
+        #[must_use]
         fn matches_group(
             group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>,
         ) -> Result<(), Self::Error>;
 
         /// Checks if the given expression matches the shape.
+        #[must_use]
         #[inline]
         fn matches(expr: &E) -> Result<(), Self::Error> {
             match expr.cases() {
                 ExprRef::Atom(atom) => Self::matches_atom(atom),
                 ExprRef::Group(group) => Self::matches_group(group),
-            }
-        }
-
-        /// Converts the given atom into the shape.
-        fn convert_atom(atom: E::Atom) -> Result<Self, Self::Error>;
-
-        /// Converts the given group into the shape.
-        fn convert_group(group: E::Group) -> Result<Self, Self::Error>;
-
-        /// Converts the given expression into the shape.
-        #[inline]
-        fn convert(expr: E) -> Result<Self, Self::Error> {
-            match expr.into() {
-                Expr::Atom(atom) => Self::convert_atom(atom),
-                Expr::Group(group) => Self::convert_group(group),
             }
         }
     }
