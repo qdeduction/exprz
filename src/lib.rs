@@ -1258,7 +1258,7 @@ pub mod pattern {
             self.0
                 .cases()
                 .group()
-                .map_or(false, move |g| ExprRef::eq_group(g, group))
+                .map_or(false, move |g| ExprRef::<P>::eq_groups::<E>(&g, &group))
         }
     }
 
@@ -1300,7 +1300,7 @@ pub mod pattern {
                     group
                         .iter()
                         .any(move |e| Self::matches(pattern, e.borrow()))
-                        || ExprRef::eq_group(pattern_group, group)
+                        || ExprRef::<P>::eq_groups::<E>(&pattern_group, &group)
                 }
                 _ => group
                     .iter()
