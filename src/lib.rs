@@ -402,9 +402,7 @@ where
                     other
                         .iter()
                         .any(move |e| self.is_subexpression(&e.borrow().cases()))
-                        || eq_by(group.iter(), other.iter(), move |l, r| {
-                            l.borrow().eq(r.borrow())
-                        })
+                        || Self::eq_groups::<R>(group, other)
                 }
             },
         }
@@ -465,6 +463,20 @@ where
             ),
         }
     }
+
+    /// Checks if two groups are equal.
+    pub fn eq_groups<'r, R>(
+        lhs: &<E::Group as IntoIteratorGen<E>>::IterGen<'e>,
+        rhs: &<R::Group as IntoIteratorGen<R>>::IterGen<'r>,
+    ) -> bool
+    where
+        R: Expression,
+        E::Atom: PartialEq<R::Atom>,
+    {
+        eq_by(lhs.iter(), rhs.iter(), move |l, r| {
+            l.borrow().eq(r.borrow())
+        })
+    }
 }
 
 impl<'l, 'r, L, R> PartialEq<ExprRef<'r, R>> for ExprRef<'l, L>
@@ -477,11 +489,7 @@ where
     fn eq(&self, other: &ExprRef<'r, R>) -> bool {
         match (self, other) {
             (Self::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
-            (Self::Group(lhs), ExprRef::Group(rhs)) => {
-                eq_by(lhs.iter(), rhs.iter(), move |l, r| {
-                    l.borrow().eq(r.borrow())
-                })
-            }
+            (Self::Group(lhs), ExprRef::Group(rhs)) => Self::eq_groups::<R>(lhs, rhs),
             _ => false,
         }
     }
@@ -1247,11 +1255,10 @@ pub mod pattern {
         }
 
         fn matches_group(&self, group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>) -> bool {
-            self.0.cases().group().map_or(false, move |g| {
-                eq_by(g.iter(), group.iter(), move |p, e| {
-                    p.borrow().eq(e.borrow())
-                })
-            })
+            self.0
+                .cases()
+                .group()
+                .map_or(false, move |g| ExprRef::eq_group(g, group))
         }
     }
 
@@ -1293,9 +1300,7 @@ pub mod pattern {
                     group
                         .iter()
                         .any(move |e| Self::matches(pattern, e.borrow()))
-                        || eq_by(pattern_group.iter(), group.iter(), move |p, e| {
-                            p.borrow().eq(e.borrow())
-                        })
+                        || ExprRef::eq_group(pattern_group, group)
                 }
                 _ => group
                     .iter()
