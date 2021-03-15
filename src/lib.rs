@@ -82,6 +82,7 @@ where
         E: 'e,
     = slice::Iter<'e, E>;
 
+    #[inline]
     fn iter(&self) -> Self::Iter<'_> {
         (self[..]).iter()
     }
@@ -103,6 +104,7 @@ where
         E: 'e,
     = slice::Iter<'e, E>;
 
+    #[inline]
     fn iter(&self) -> Self::Iter<'_> {
         (self[..]).iter()
     }
@@ -133,6 +135,7 @@ where
         E: 'e,
     = &'e Self;
 
+    #[inline]
     fn reference(&self) -> Self::Ref<'_> {
         self
     }
@@ -203,11 +206,25 @@ where
         self.into().atom()
     }
 
+    /// Converts from an `&Expression` to an `Option<&E::Atom>`.
+    #[must_use]
+    #[inline]
+    fn atom_ref(&self) -> Option<&Self::Atom> {
+        self.cases().atom()
+    }
+
     /// Converts from an `Expression` to an `Option<E::Group>`.
     #[must_use]
     #[inline]
     fn group(self) -> Option<Self::Group> {
         self.into().group()
+    }
+
+    /// Converts from an `&Expression` to an `Option<<E::Group::Ref>>`.
+    #[must_use]
+    #[inline]
+    fn group_ref(&self) -> Option<<Self::Group as Group<Self>>::Ref<'_>> {
+        self.cases().group()
     }
 
     /// Returns the contained `Atom` value, consuming the `self` value.
@@ -719,10 +736,30 @@ where
         }
     }
 
+    /// Converts from an `&Expr<E>` to an `Option<&E::Atom>`.
+    #[must_use]
+    #[inline]
+    pub fn atom_ref(&self) -> Option<&E::Atom> {
+        match self {
+            Expr::Atom(atom) => Some(atom),
+            _ => None,
+        }
+    }
+
     /// Converts from an `Expr<E>` to an `Option<E::Group>`.
     #[must_use]
     #[inline]
     pub fn group(self) -> Option<E::Group> {
+        match self {
+            Expr::Group(group) => Some(group),
+            _ => None,
+        }
+    }
+
+    /// Converts from an `&Expr<E>` to an `Option<&E::Group>`.
+    #[must_use]
+    #[inline]
+    pub fn group_ref(&self) -> Option<&E::Group> {
         match self {
             Expr::Group(group) => Some(group),
             _ => None,
