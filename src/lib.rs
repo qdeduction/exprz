@@ -480,10 +480,30 @@ where
         }
     }
 
+    /// Converts from an `&ExprRef<E>` to an `Option<&E::Atom>`.
+    #[must_use]
+    #[inline]
+    pub fn atom_ref(&self) -> Option<&'e E::Atom> {
+        match self {
+            Self::Atom(atom) => Some(atom),
+            _ => None,
+        }
+    }
+
     /// Converts from an `ExprRef<E>` to an `Option<E::Group::Ref>`.
     #[must_use]
     #[inline]
     pub fn group(self) -> Option<<E::Group as Group<E>>::Ref<'e>> {
+        match self {
+            Self::Group(group) => Some(group),
+            _ => None,
+        }
+    }
+
+    /// Converts from an `&ExprRef<E>` to an `Option<&E::Group::Ref>`.
+    #[must_use]
+    #[inline]
+    pub fn group_ref(&self) -> Option<&<E::Group as Group<E>>::Ref<'e>> {
         match self {
             Self::Group(group) => Some(group),
             _ => None,
@@ -1340,38 +1360,45 @@ pub mod pattern {
             Self(pattern)
         }
 
-        fn matches_atom<E>(pattern: &P, atom: &E::Atom) -> bool
+        fn matches_atom<E>(pattern: &ExprRef<'_, P>, atom: &E::Atom) -> bool
         where
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases().atom() {
-                Some(pattern_atom) => pattern_atom == atom,
+            match pattern {
+                ExprRef::Atom(pattern_atom) => *pattern_atom == atom,
                 _ => false,
             }
         }
 
-        fn matches_group<E>(pattern: &P, group: <E::Group as Group<E>>::Ref<'_>) -> bool
+        fn matches_group<E>(
+            pattern: &ExprRef<'_, P>,
+            group: <E::Group as Group<E>>::Ref<'_>,
+        ) -> bool
         where
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases().group() {
-                Some(pattern_group) => {
-                    group.iter().any(move |e| Self::matches(pattern, &e))
+            match pattern {
+                ExprRef::Group(pattern_group) => {
+                    group
+                        .iter()
+                        .any(move |e| Self::matches(&pattern, e.cases()))
                         || ExprRef::<P>::eq_groups::<E>(&pattern_group, &group)
                 }
-                _ => group.iter().any(move |e| Self::matches(pattern, &e)),
+                _ => group
+                    .iter()
+                    .any(move |e| Self::matches(&pattern, e.cases())),
             }
         }
 
         #[inline]
-        fn matches<E>(pattern: &P, expr: &E) -> bool
+        fn matches<E>(pattern: &ExprRef<'_, P>, expr: ExprRef<'_, E>) -> bool
         where
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match expr.cases() {
+            match expr {
                 ExprRef::Atom(atom) => Self::matches_atom::<E>(pattern, atom),
                 ExprRef::Group(group) => Self::matches_group::<E>(pattern, group),
             }
@@ -1386,17 +1413,17 @@ pub mod pattern {
     {
         #[inline]
         fn matches_atom(&self, atom: &E::Atom) -> bool {
-            Self::matches_atom::<E>(&self.0, atom)
+            Self::matches_atom::<E>(&self.0.cases(), atom)
         }
 
         #[inline]
         fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
-            Self::matches_group::<E>(&self.0, group)
+            Self::matches_group::<E>(&self.0.cases(), group)
         }
 
         #[inline]
         fn matches(&self, expr: &E) -> bool {
-            Self::matches(&self.0, expr)
+            Self::matches(&self.0.cases(), expr.cases())
         }
     }
 
@@ -1416,21 +1443,21 @@ pub mod pattern {
             Self(is_wildcard, pattern)
         }
 
-        fn matches_atom<F, E>(is_wildcard: F, pattern: &P, atom: &E::Atom) -> bool
+        fn matches_atom<F, E>(is_wildcard: F, pattern: &ExprRef<'_, P>, atom: &E::Atom) -> bool
         where
             F: FnOnce(&P::Atom) -> bool,
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases().atom() {
-                Some(pattern_atom) => is_wildcard(pattern_atom) || pattern_atom == atom,
+            match pattern {
+                ExprRef::Atom(pattern_atom) => is_wildcard(pattern_atom) || *pattern_atom == atom,
                 _ => false,
             }
         }
 
         fn matches_group<F, E>(
             mut is_wildcard: F,
-            pattern: &P,
+            pattern: &ExprRef<'_, P>,
             group: <E::Group as Group<E>>::Ref<'_>,
         ) -> bool
         where
@@ -1438,52 +1465,53 @@ pub mod pattern {
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases() {
+            match pattern {
                 ExprRef::Atom(pattern_atom) if is_wildcard(pattern_atom) => true,
                 ExprRef::Atom(_) => group
                     .iter()
-                    .any(move |e| Self::matches(&mut is_wildcard, pattern, &e)),
+                    .any(move |e| Self::matches(&mut is_wildcard, pattern, e.cases())),
                 ExprRef::Group(pattern_group) => {
                     group
                         .iter()
-                        .any(|e| Self::matches(&mut is_wildcard, pattern, &e))
+                        .any(|e| Self::matches(&mut is_wildcard, pattern, e.cases()))
                         || util::eq_by(pattern_group.iter(), group.iter(), |p, e| {
-                            Self::wildcard_equality(&mut is_wildcard, &p, &e)
+                            Self::wildcard_equality(&mut is_wildcard, &p.cases(), &e.cases())
                         })
                 }
             }
         }
 
         #[inline]
-        fn matches<F, E>(is_wildcard: F, pattern: &P, expr: &E) -> bool
+        fn matches<F, E>(is_wildcard: F, pattern: &ExprRef<'_, P>, expr: ExprRef<'_, E>) -> bool
         where
             F: FnMut(&P::Atom) -> bool,
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match expr.cases() {
+            match expr {
                 ExprRef::Atom(atom) => Self::matches_atom::<_, E>(is_wildcard, pattern, atom),
                 ExprRef::Group(group) => Self::matches_group::<_, E>(is_wildcard, pattern, group),
             }
         }
 
-        fn wildcard_equality<F, E>(is_wildcard: &mut F, pattern: &P, expr: &E) -> bool
+        fn wildcard_equality<F, E>(
+            is_wildcard: &mut F,
+            pattern: &ExprRef<'_, P>,
+            expr: &ExprRef<'_, E>,
+        ) -> bool
         where
             F: FnMut(&P::Atom) -> bool,
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern.cases() {
+            match pattern {
                 ExprRef::Atom(pattern_atom) => {
                     is_wildcard(pattern_atom)
-                        || expr
-                            .cases()
-                            .atom()
-                            .map_or(false, move |a| pattern_atom == a)
+                        || expr.atom_ref().map_or(false, move |a| *pattern_atom == a)
                 }
-                ExprRef::Group(pattern_group) => match expr.cases().group() {
+                ExprRef::Group(pattern_group) => match expr.group_ref() {
                     Some(group) => util::eq_by(pattern_group.iter(), group.iter(), move |p, e| {
-                        Self::wildcard_equality(is_wildcard, &p.reference(), &e.reference())
+                        Self::wildcard_equality(is_wildcard, &p.cases(), &e.cases())
                     }),
                     _ => false,
                 },
@@ -1500,17 +1528,17 @@ pub mod pattern {
     {
         #[inline]
         fn matches_atom(&self, atom: &E::Atom) -> bool {
-            Self::matches_atom::<_, E>(&self.0, &self.1, atom)
+            Self::matches_atom::<_, E>(&self.0, &self.1.cases(), atom)
         }
 
         #[inline]
         fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
-            Self::matches_group::<_, E>(&self.0, &self.1, group)
+            Self::matches_group::<_, E>(&self.0, &self.1.cases(), group)
         }
 
         #[inline]
         fn matches(&self, expr: &E) -> bool {
-            Self::matches(&self.0, &self.1, expr)
+            Self::matches(&self.0, &self.1.cases(), expr.cases())
         }
     }
 
@@ -1523,17 +1551,17 @@ pub mod pattern {
     {
         #[inline]
         fn matches_atom(&mut self, atom: &E::Atom) -> bool {
-            Self::matches_atom::<_, E>(&mut self.0, &self.1, atom)
+            Self::matches_atom::<_, E>(&mut self.0, &self.1.cases(), atom)
         }
 
         #[inline]
         fn matches_group(&mut self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
-            Self::matches_group::<_, E>(&mut self.0, &self.1, group)
+            Self::matches_group::<_, E>(&mut self.0, &self.1.cases(), group)
         }
 
         #[inline]
         fn matches(&mut self, expr: &E) -> bool {
-            Self::matches(&mut self.0, &self.1, expr)
+            Self::matches(&mut self.0, &self.1.cases(), expr.cases())
         }
     }
 
@@ -1585,7 +1613,7 @@ pub mod pattern {
             Self(pattern)
         }
 
-        fn matches_atom<E>(pattern: &P, atom: &E::Atom) -> bool
+        fn matches_atom<E>(pattern: ExprRef<'_, P>, atom: &E::Atom) -> bool
         where
             E: Expression,
         {
@@ -1596,7 +1624,7 @@ pub mod pattern {
                 .map_or(false, BasicShape::matches_atom)
         }
 
-        fn matches_group<E>(pattern: &P, group: <E::Group as Group<E>>::Ref<'_>) -> bool
+        fn matches_group<E>(pattern: ExprRef<'_, P>, group: <E::Group as Group<E>>::Ref<'_>) -> bool
         where
             E: Expression,
         {
@@ -1604,18 +1632,18 @@ pub mod pattern {
                 ExprRef::Atom(pattern_atom) => pattern_atom.matches_group(),
                 ExprRef::Group(pattern_group) => {
                     util::eq_by(pattern_group.iter(), group.iter(), move |p, e| {
-                        Self::matches(&p, &e)
+                        Self::matches(p.cases(), e.cases())
                     })
                 }
             }
         }
 
         #[inline]
-        fn matches<E>(pattern: &P, expr: &E) -> bool
+        fn matches<E>(pattern: ExprRef<'_, P>, expr: ExprRef<'_, E>) -> bool
         where
             E: Expression,
         {
-            match expr.cases() {
+            match expr {
                 ExprRef::Atom(atom) => Self::matches_atom::<E>(pattern, atom),
                 ExprRef::Group(group) => Self::matches_group::<E>(pattern, group),
             }
@@ -1629,17 +1657,17 @@ pub mod pattern {
     {
         #[inline]
         fn matches_atom(&self, atom: &E::Atom) -> bool {
-            Self::matches_atom::<E>(&self.0, atom)
+            Self::matches_atom::<E>(self.0.cases(), atom)
         }
 
         #[inline]
         fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
-            Self::matches_group::<E>(&self.0, group)
+            Self::matches_group::<E>(self.0.cases(), group)
         }
 
         #[inline]
         fn matches(&self, expr: &E) -> bool {
-            Self::matches(&self.0, expr)
+            Self::matches(self.0.cases(), expr.cases())
         }
     }
 }
