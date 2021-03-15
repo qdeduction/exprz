@@ -39,7 +39,7 @@ where
     /// Group Expression Type
     type Group: IntoIteratorGen<Self>;
 
-    /// Gets a reference to the underlying `Expression` type.
+    /// Returns a reference to the underlying `Expression` type.
     fn cases(&self) -> ExprRef<Self>;
 
     /// Builds an `Expression` from an atomic element.
@@ -125,11 +125,38 @@ where
 
     /// Builds an empty atomic expression.
     #[inline]
+    fn default_atom<T>() -> Self::Atom
+    where
+        Self::Atom: FromIterator<T>,
+    {
+        None.into_iter().collect()
+    }
+
+    /// Builds an empty grouped expression.
+    #[inline]
+    fn default_group() -> Self::Group
+    where
+        Self::Group: FromIterator<Self>,
+    {
+        None.into_iter().collect()
+    }
+
+    /// Returns the default value of an `Expression`: the empty group.
+    #[inline]
+    fn default() -> Self
+    where
+        Self::Group: FromIterator<Self>,
+    {
+        Self::empty_group()
+    }
+
+    /// Builds an empty atomic expression.
+    #[inline]
     fn empty_atom<T>() -> Self
     where
         Self::Atom: FromIterator<T>,
     {
-        Self::from_atom(None.into_iter().collect())
+        Self::from_atom(Self::default_atom::<T>())
     }
 
     /// Builds an empty grouped expression.
@@ -138,16 +165,7 @@ where
     where
         Self::Group: FromIterator<Self>,
     {
-        Self::from_group(None.into_iter().collect())
-    }
-
-    /// Gets the default value of an `Expression`: the empty group.
-    #[inline]
-    fn default() -> Self
-    where
-        Self::Group: FromIterator<Self>,
-    {
-        Self::empty_group()
+        Self::from_group(Self::default_group())
     }
 
     /// Clones an `Expression` that has `Clone`-able `Atom`s.
@@ -290,7 +308,7 @@ pub trait HasGroupType<'e, E, T>
 where
     E: Expression,
 {
-    /// Gets underlying group type.
+    /// Returns underlying group type.
     fn group_type(&self) -> &'e T;
 }
 
@@ -304,7 +322,7 @@ where
     /// Group Type
     type GroupType;
 
-    /// Gets `Self::GroupType` if `Expression` is a group.
+    /// Returns `Self::GroupType` if `Expression` is a group.
     fn group_type(&self) -> Option<&Self::GroupType> {
         self.cases().group().map(move |g| g.group_type())
     }
@@ -1605,7 +1623,7 @@ pub mod iter {
         where
             T: 't;
 
-        /// Gets a new `Iterator`.
+        /// Returns a new `Iterator`.
         fn iter(&self) -> Self::Iter<'_>;
     }
 
@@ -1616,7 +1634,7 @@ pub mod iter {
         where
             T: 't;
 
-        /// Gets a new `IteratorGen`.
+        /// Returns a new `IteratorGen`.
         fn gen(&self) -> Self::IterGen<'_>;
     }
 
