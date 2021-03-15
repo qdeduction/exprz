@@ -63,7 +63,6 @@ where
     /// Parses a string into an `Expression`.
     #[cfg(feature = "parse")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
-    #[must_use]
     #[inline]
     fn from_str(s: &str) -> parse::Result<Self>
     where
@@ -1135,17 +1134,14 @@ pub mod shape {
         type Error;
 
         /// Checks if the given atom matches the shape.
-        #[must_use]
         fn matches_atom(atom: &E::Atom) -> Result<(), Self::Error>;
 
         /// Checks if the given group matches the shape.
-        #[must_use]
         fn matches_group(
             group: <E::Group as IntoIteratorGen<E>>::IterGen<'_>,
         ) -> Result<(), Self::Error>;
 
         /// Checks if the given expression matches the shape.
-        #[must_use]
         #[inline]
         fn matches(expr: &E) -> Result<(), Self::Error> {
             match expr.cases() {
