@@ -6,6 +6,8 @@
 #![forbid(unsafe_code)]
 #![no_std]
 
+// TODO: implement `Deref/Borrow/ToOwned` traits where possible
+
 use core::{iter::FromIterator, slice};
 
 #[cfg(feature = "alloc")]
@@ -27,6 +29,95 @@ where
 {
     /// Returns inner expression reference.
     fn cases(self) -> ExprRef<'e, E>;
+
+    /// Checks if the `Reference` is atomic.
+    #[allow(clippy::wrong_self_convention)]
+    #[must_use]
+    #[inline]
+    fn is_atom(self) -> bool
+    where
+        Self: Sized,
+        E: 'e,
+    {
+        self.cases().is_atom()
+    }
+
+    /// Checks if the `Reference` is a grouped expression `Group<E>::Ref`.
+    #[allow(clippy::wrong_self_convention)]
+    #[must_use]
+    #[inline]
+    fn is_group(self) -> bool
+    where
+        Self: Sized,
+        E: 'e,
+    {
+        self.cases().is_group()
+    }
+
+    /// Converts from an `Reference<E>` to an `Option<&E::Atom>`.
+    #[must_use]
+    #[inline]
+    fn atom(self) -> Option<&'e E::Atom>
+    where
+        Self: Sized,
+        E: 'e,
+    {
+        self.cases().atom()
+    }
+
+    /// Converts from an `Reference<E>` to an `Option<GroupRef<E>>`.
+    #[must_use]
+    #[inline]
+    fn group(self) -> Option<GroupRef<'e, E>>
+    where
+        Self: Sized,
+        E: 'e,
+    {
+        self.cases().group()
+    }
+
+    /// Returns the contained `Atom` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is a `Group`.
+    #[inline]
+    #[track_caller]
+    fn unwrap_atom(self) -> &'e E::Atom
+    where
+        Self: Sized,
+        E: 'e,
+    {
+        self.cases().unwrap_atom()
+    }
+
+    /// Returns the contained `Group` value, consuming the `self` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `self` value is an `Atom`.
+    #[inline]
+    #[track_caller]
+    fn unwrap_group(self) -> GroupRef<'e, E>
+    where
+        Self: Sized,
+        E: 'e,
+    {
+        self.cases().unwrap_group()
+    }
+
+    /// Returns new owned copy of the underlying expression.
+    #[allow(clippy::wrong_self_convention)]
+    #[inline]
+    fn to_owned(self) -> E
+    where
+        Self: Sized,
+        E: 'e,
+        E::Atom: Clone,
+        E::Group: FromIterator<E>,
+    {
+        self.cases().to_owned()
+    }
 }
 
 impl<'e, E> Reference<'e, E> for &'e E
@@ -143,6 +234,9 @@ where
 
 /// Expression Group Reference Alias
 pub type GroupRef<'e, E> = <<E as Expression>::Group as Group<E>>::Ref<'e>;
+
+/// Expression Group Reference Iterator Item Alias
+pub type GroupRefItem<'e, E> = <GroupRef<'e, E> as GroupReference<E>>::Item<'e>;
 
 /// Expression Trait
 pub trait Expression
@@ -574,6 +668,17 @@ where
                 }
             },
         }
+    }
+
+    /// Returns new owned copy of the underlying expression.
+    #[allow(clippy::wrong_self_convention)]
+    #[inline]
+    pub fn to_owned(self) -> E
+    where
+        E::Atom: Clone,
+        E::Group: FromIterator<E>,
+    {
+        E::from_expr(self.into())
     }
 
     /// Extends a function on `&Atom`s to a function on `&Expression`s.
