@@ -141,6 +141,9 @@ where
     }
 }
 
+/// Expression Group Reference Alias
+pub type GroupRef<'e, E> = <<E as Expression>::Group as Group<E>>::Ref<'e>;
+
 /// Expression Trait
 pub trait Expression
 where
@@ -220,10 +223,10 @@ where
         self.into().group()
     }
 
-    /// Converts from an `&Expression` to an `Option<<E::Group::Ref>>`.
+    /// Converts from an `&Expression` to an `Option<GroupRef>`.
     #[must_use]
     #[inline]
-    fn group_ref(&self) -> Option<<Self::Group as Group<Self>>::Ref<'_>> {
+    fn group_ref(&self) -> Option<GroupRef<Self>> {
         self.cases().group()
     }
 
@@ -446,7 +449,7 @@ where
 pub trait MultiExpression
 where
     Self: Expression,
-    for<'e> <Self::Group as Group<Self>>::Ref<'e>: HasGroupType<'e, Self, Self::GroupType>,
+    for<'e> GroupRef<'e, Self>: HasGroupType<'e, Self, Self::GroupType>,
 {
     /// Group Type
     type GroupType;
@@ -466,7 +469,7 @@ where
     Atom(&'e E::Atom),
 
     /// Grouped expression reference
-    Group(<E::Group as Group<E>>::Ref<'e>),
+    Group(GroupRef<'e, E>),
 }
 
 impl<'e, E> ExprRef<'e, E>
@@ -507,20 +510,20 @@ where
         }
     }
 
-    /// Converts from an `ExprRef<E>` to an `Option<E::Group::Ref>`.
+    /// Converts from an `ExprRef<E>` to an `Option<GroupRef<E>>`.
     #[must_use]
     #[inline]
-    pub fn group(self) -> Option<<E::Group as Group<E>>::Ref<'e>> {
+    pub fn group(self) -> Option<GroupRef<'e, E>> {
         match self {
             Self::Group(group) => Some(group),
             _ => None,
         }
     }
 
-    /// Converts from an `&ExprRef<E>` to an `Option<&E::Group::Ref>`.
+    /// Converts from an `&ExprRef<E>` to an `Option<&GroupRef<E>>`.
     #[must_use]
     #[inline]
-    pub fn group_ref(&self) -> Option<&<E::Group as Group<E>>::Ref<'e>> {
+    pub fn group_ref(&self) -> Option<&GroupRef<'e, E>> {
         match self {
             Self::Group(group) => Some(group),
             _ => None,
@@ -545,7 +548,7 @@ where
     /// Panics if the `self` value is an `Atom`.
     #[inline]
     #[track_caller]
-    pub fn unwrap_group(self) -> <E::Group as Group<E>>::Ref<'e> {
+    pub fn unwrap_group(self) -> GroupRef<'e, E> {
         self.group().unwrap()
     }
 
@@ -631,10 +634,7 @@ where
 
     /// Checks if two groups are equal.
     #[inline]
-    pub fn eq_groups<'r, R>(
-        lhs: &<E::Group as Group<E>>::Ref<'e>,
-        rhs: &<R::Group as Group<R>>::Ref<'r>,
-    ) -> bool
+    pub fn eq_groups<'r, R>(lhs: &GroupRef<'e, E>, rhs: &GroupRef<'r, R>) -> bool
     where
         R: Expression,
         E::Atom: PartialEq<R::Atom>,
@@ -646,7 +646,7 @@ where
 impl<'e, E> Clone for ExprRef<'e, E>
 where
     E: Expression,
-    <E::Group as Group<E>>::Ref<'e>: Clone,
+    GroupRef<'e, E>: Clone,
 {
     #[inline]
     fn clone(&self) -> Self {
@@ -660,7 +660,7 @@ where
 impl<'e, E> Copy for ExprRef<'e, E>
 where
     E: Expression,
-    <E::Group as Group<E>>::Ref<'e>: Copy,
+    GroupRef<'e, E>: Copy,
 {
 }
 
@@ -1324,7 +1324,7 @@ pub mod shape {
         fn matches_atom(atom: &E::Atom) -> Result<(), Self::Error>;
 
         /// Checks if the given group matches the shape.
-        fn matches_group(group: <E::Group as Group<E>>::Ref<'_>) -> Result<(), Self::Error>;
+        fn matches_group(group: GroupRef<E>) -> Result<(), Self::Error>;
 
         /// Checks if the given expression matches the shape.
         #[inline]
@@ -1395,7 +1395,7 @@ pub mod pattern {
         fn matches_atom(&self, atom: &E::Atom) -> bool;
 
         /// Checks if the pattern matches a group.
-        fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool;
+        fn matches_group(&self, group: GroupRef<E>) -> bool;
 
         /// Checks if the pattern matches an expression.
         #[inline]
@@ -1416,7 +1416,7 @@ pub mod pattern {
         fn matches_atom(&mut self, atom: &E::Atom) -> bool;
 
         /// Checks if the pattern matches a group.
-        fn matches_group(&mut self, group: <E::Group as Group<E>>::Ref<'_>) -> bool;
+        fn matches_group(&mut self, group: GroupRef<E>) -> bool;
 
         /// Checks if the pattern matches an expression.
         #[inline]
@@ -1453,7 +1453,7 @@ pub mod pattern {
             self.0.cases().atom().map_or(false, |a| a == atom)
         }
 
-        fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
+        fn matches_group(&self, group: GroupRef<E>) -> bool {
             self.0
                 .cases()
                 .group()
@@ -1486,10 +1486,7 @@ pub mod pattern {
             }
         }
 
-        fn matches_group<E>(
-            pattern: &ExprRef<'_, P>,
-            group: <E::Group as Group<E>>::Ref<'_>,
-        ) -> bool
+        fn matches_group<E>(pattern: &ExprRef<P>, group: GroupRef<E>) -> bool
         where
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
@@ -1532,7 +1529,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
+        fn matches_group(&self, group: GroupRef<E>) -> bool {
             Self::matches_group::<E>(&self.0.cases(), group)
         }
 
@@ -1570,11 +1567,7 @@ pub mod pattern {
             }
         }
 
-        fn matches_group<F, E>(
-            mut is_wildcard: F,
-            pattern: &ExprRef<'_, P>,
-            group: <E::Group as Group<E>>::Ref<'_>,
-        ) -> bool
+        fn matches_group<F, E>(mut is_wildcard: F, pattern: &ExprRef<P>, group: GroupRef<E>) -> bool
         where
             F: FnMut(&P::Atom) -> bool,
             E: Expression,
@@ -1647,7 +1640,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
+        fn matches_group(&self, group: GroupRef<E>) -> bool {
             Self::matches_group::<_, E>(&self.0, &self.1.cases(), group)
         }
 
@@ -1670,7 +1663,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group(&mut self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
+        fn matches_group(&mut self, group: GroupRef<E>) -> bool {
             Self::matches_group::<_, E>(&mut self.0, &self.1.cases(), group)
         }
 
@@ -1739,7 +1732,7 @@ pub mod pattern {
                 .map_or(false, BasicShape::matches_atom)
         }
 
-        fn matches_group<E>(pattern: ExprRef<'_, P>, group: <E::Group as Group<E>>::Ref<'_>) -> bool
+        fn matches_group<E>(pattern: ExprRef<P>, group: GroupRef<E>) -> bool
         where
             E: Expression,
         {
@@ -1776,7 +1769,7 @@ pub mod pattern {
         }
 
         #[inline]
-        fn matches_group(&self, group: <E::Group as Group<E>>::Ref<'_>) -> bool {
+        fn matches_group(&self, group: GroupRef<E>) -> bool {
             Self::matches_group::<E>(self.0.cases(), group)
         }
 
@@ -1939,9 +1932,7 @@ pub mod vec {
 
         impl<A, G> Group<MultiExpr<A, G>> for (Vec<MultiExpr<A, G>>, G) {}
 
-        impl<'e, A, G> HasGroupType<'e, MultiExpr<A, G>, G>
-            for <<MultiExpr<A, G> as Expression>::Group as Group<MultiExpr<A, G>>>::Ref<'e>
-        {
+        impl<'e, A, G> HasGroupType<'e, MultiExpr<A, G>, G> for GroupRef<'e, MultiExpr<A, G>> {
             #[inline]
             fn group_type(&self) -> &'e G {
                 self.1
