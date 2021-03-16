@@ -23,9 +23,9 @@ use core::str::FromStr;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Expression Reference Trait
-pub trait Reference<'e, E>
+pub trait Reference<'e, E>: From<&'e E>
 where
-    E: Expression,
+    E: 'e + Expression,
 {
     /// Returns inner expression reference.
     fn cases(self) -> ExprRef<'e, E>;
@@ -37,7 +37,6 @@ where
     fn is_atom(self) -> bool
     where
         Self: Sized,
-        E: 'e,
     {
         self.cases().is_atom()
     }
@@ -49,7 +48,6 @@ where
     fn is_group(self) -> bool
     where
         Self: Sized,
-        E: 'e,
     {
         self.cases().is_group()
     }
@@ -60,7 +58,6 @@ where
     fn atom(self) -> Option<&'e E::Atom>
     where
         Self: Sized,
-        E: 'e,
     {
         self.cases().atom()
     }
@@ -71,7 +68,6 @@ where
     fn group(self) -> Option<GroupRef<'e, E>>
     where
         Self: Sized,
-        E: 'e,
     {
         self.cases().group()
     }
@@ -86,7 +82,6 @@ where
     fn unwrap_atom(self) -> &'e E::Atom
     where
         Self: Sized,
-        E: 'e,
     {
         self.cases().unwrap_atom()
     }
@@ -101,7 +96,6 @@ where
     fn unwrap_group(self) -> GroupRef<'e, E>
     where
         Self: Sized,
-        E: 'e,
     {
         self.cases().unwrap_group()
     }
@@ -112,7 +106,6 @@ where
     fn to_owned(self) -> E
     where
         Self: Sized,
-        E: 'e,
         E::Atom: Clone,
         E::Group: FromIterator<E>,
     {
@@ -785,6 +778,30 @@ where
     }
 }
 
+impl<'e, E> From<&'e E> for ExprRef<'e, E>
+where
+    E: Expression,
+{
+    #[inline]
+    fn from(expr: &'e E) -> Self {
+        expr.cases()
+    }
+}
+
+impl<'e, E> From<&'e Expr<E>> for ExprRef<'e, E>
+where
+    E: Expression,
+{
+    #[must_use]
+    #[inline]
+    fn from(expr: &'e Expr<E>) -> Self {
+        match expr {
+            Expr::Atom(atom) => Self::Atom(atom),
+            Expr::Group(group) => Self::Group(group.reference()),
+        }
+    }
+}
+
 /// Canonical Concrete `Expression` Type
 #[derive(Debug)]
 pub enum Expr<E>
@@ -996,8 +1013,8 @@ where
 {
     #[must_use]
     #[inline]
-    fn from(expr_ref: ExprRef<'e, E>) -> Self {
-        match expr_ref {
+    fn from(expr: ExprRef<'e, E>) -> Self {
+        match expr {
             ExprRef::Atom(atom) => Self::Atom(atom.clone()),
             ExprRef::Group(group) => Self::Group(
                 group
@@ -1005,20 +1022,6 @@ where
                     .map(move |e| E::from_expr(e.cases().into()))
                     .collect(),
             ),
-        }
-    }
-}
-
-impl<'e, E> From<&'e Expr<E>> for ExprRef<'e, E>
-where
-    E: Expression,
-{
-    #[must_use]
-    #[inline]
-    fn from(expr: &'e Expr<E>) -> Self {
-        match expr {
-            Expr::Atom(atom) => Self::Atom(atom),
-            Expr::Group(group) => Self::Group(group.reference()),
         }
     }
 }
@@ -2117,6 +2120,13 @@ pub mod buffered {
 
         fn from_group(group: <Self as Expression>::Group) -> Self {
             group.inner
+        }
+    }
+
+    impl<'e, T> From<&'e Expr<T>> for ExprView<'e, T> {
+        fn from(expr: &'e Expr<T>) -> Self {
+            let _ = expr;
+            todo!()
         }
     }
 
