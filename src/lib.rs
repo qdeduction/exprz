@@ -38,7 +38,7 @@ where
     where
         Self: Sized,
     {
-        self.cases().is_atom()
+        ExprRef::is_atom(&self.cases())
     }
 
     /// Checks if the `Reference` is a grouped expression `Group<E>::Ref`.
@@ -49,7 +49,7 @@ where
     where
         Self: Sized,
     {
-        self.cases().is_group()
+        ExprRef::is_group(&self.cases())
     }
 
     /// Converts from an `Reference<E>` to an `Option<&E::Atom>`.
@@ -59,7 +59,7 @@ where
     where
         Self: Sized,
     {
-        self.cases().atom()
+        ExprRef::atom(self.cases())
     }
 
     /// Converts from an `Reference<E>` to an `Option<GroupRef<E>>`.
@@ -69,7 +69,7 @@ where
     where
         Self: Sized,
     {
-        self.cases().group()
+        ExprRef::group(self.cases())
     }
 
     /// Returns the contained `Atom` value, consuming the `self` value.
@@ -83,7 +83,7 @@ where
     where
         Self: Sized,
     {
-        self.cases().unwrap_atom()
+        ExprRef::unwrap_atom(self.cases())
     }
 
     /// Returns the contained `Group` value, consuming the `self` value.
@@ -97,7 +97,7 @@ where
     where
         Self: Sized,
     {
-        self.cases().unwrap_group()
+        ExprRef::unwrap_group(self.cases())
     }
 
     /// Returns new owned copy of the underlying expression.
@@ -109,7 +109,7 @@ where
         E::Atom: Clone,
         E::Group: FromIterator<E>,
     {
-        self.cases().to_owned()
+        ExprRef::to_owned(self.cases())
     }
 }
 
@@ -228,6 +228,21 @@ where
     }
 }
 
+impl<E> Group<E> for [E]
+where
+    E: Expression,
+{
+    type Ref<'e>
+    where
+        E: 'e,
+    = &'e Self;
+
+    #[inline]
+    fn reference(&self) -> Self::Ref<'_> {
+        self
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<E> Group<E> for Vec<E>
@@ -299,42 +314,42 @@ where
     #[must_use]
     #[inline]
     fn is_atom(&self) -> bool {
-        self.cases().is_atom()
+        ExprRef::is_atom(&self.cases())
     }
 
     /// Checks if the `Expression` is a grouped expression.
     #[must_use]
     #[inline]
     fn is_group(&self) -> bool {
-        self.cases().is_group()
+        ExprRef::is_group(&self.cases())
     }
 
     /// Converts from an `Expression` to an `Option<E::Atom>`.
     #[must_use]
     #[inline]
     fn atom(self) -> Option<Self::Atom> {
-        self.into().atom()
+        Expr::atom(self.into())
     }
 
     /// Converts from an `&Expression` to an `Option<&E::Atom>`.
     #[must_use]
     #[inline]
     fn atom_ref(&self) -> Option<&Self::Atom> {
-        self.cases().atom()
+        ExprRef::atom(self.cases())
     }
 
     /// Converts from an `Expression` to an `Option<E::Group>`.
     #[must_use]
     #[inline]
     fn group(self) -> Option<Self::Group> {
-        self.into().group()
+        Expr::group(self.into())
     }
 
     /// Converts from an `&Expression` to an `Option<GroupRef>`.
     #[must_use]
     #[inline]
     fn group_ref(&self) -> Option<GroupRef<Self>> {
-        self.cases().group()
+        ExprRef::group(self.cases())
     }
 
     /// Returns the contained `Atom` value, consuming the `self` value.
@@ -345,7 +360,7 @@ where
     #[inline]
     #[track_caller]
     fn unwrap_atom(self) -> Self::Atom {
-        self.into().unwrap_atom()
+        Expr::unwrap_atom(self.into())
     }
 
     /// Returns the contained `Group` value, consuming the `self` value.
@@ -356,7 +371,7 @@ where
     #[inline]
     #[track_caller]
     fn unwrap_group(self) -> Self::Group {
-        self.into().unwrap_group()
+        Expr::unwrap_group(self.into())
     }
 
     /// Builds an empty atomic expression.
@@ -411,7 +426,7 @@ where
         Self::Atom: Clone,
         Self::Group: FromIterator<Self>,
     {
-        Self::from_expr(self.cases().into())
+        ExprRef::to_owned(self.cases())
     }
 
     /// Checks if two `Expression`s are equal using `PartialEq` on their `Atom`s.
@@ -421,7 +436,7 @@ where
         E: Expression,
         Self::Atom: PartialEq<E::Atom>,
     {
-        self.cases() == other.cases()
+        self.cases().eq(&other.cases())
     }
 
     /// Checks if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
@@ -504,7 +519,7 @@ where
         E::Group: FromIterator<E>,
         F: FnMut(Self::Atom) -> E::Atom,
     {
-        self.into().map(f)
+        Expr::map(self.into(), f)
     }
 
     /// Extends a function on `&Atom`s to a function on `&Expression`s.
@@ -515,7 +530,7 @@ where
         E::Group: FromIterator<E>,
         F: FnMut(&Self::Atom) -> E::Atom,
     {
-        self.cases().map_ref(f)
+        ExprRef::map_ref(&self.cases(), f)
     }
 
     /// Substitutes an `Expression` into each `Atom` of `self`.
@@ -525,7 +540,7 @@ where
         Self::Group: FromIterator<Self> + IntoIterator<Item = Self>,
         F: FnMut(Self::Atom) -> Self,
     {
-        self.into().substitute(f)
+        Expr::substitute(self.into(), f)
     }
 
     /// Substitutes an `Expression` into each `Atom` of `&self`.
@@ -535,7 +550,7 @@ where
         Self::Group: FromIterator<Self>,
         F: FnMut(&Self::Atom) -> Self,
     {
-        self.cases().substitute_ref(f)
+        ExprRef::substitute_ref(&self.cases(), f)
     }
 }
 
@@ -563,7 +578,7 @@ where
 
     /// Returns `Self::GroupType` if `Expression` is a group.
     fn group_type(&self) -> Option<&Self::GroupType> {
-        self.cases().group().map(move |g| g.group_type())
+        self.group().map(move |g| g.group_type())
     }
 }
 
@@ -982,13 +997,7 @@ where
     fn clone(&self) -> Self {
         match self {
             Self::Atom(atom) => Self::Atom(atom.clone()),
-            Self::Group(group) => Self::Group(
-                group
-                    .reference()
-                    .iter()
-                    .map(move |e| E::from_expr(e.cases().into()))
-                    .collect(),
-            ),
+            Self::Group(group) => Self::Group(group.clone()),
         }
     }
 }
@@ -1036,12 +1045,7 @@ where
     fn from(expr: ExprRef<'e, E>) -> Self {
         match expr {
             ExprRef::Atom(atom) => Self::Atom(atom.clone()),
-            ExprRef::Group(group) => Self::Group(
-                group
-                    .iter()
-                    .map(move |e| E::from_expr(e.cases().into()))
-                    .collect(),
-            ),
+            ExprRef::Group(group) => Self::Group(group.to_owned()),
         }
     }
 }
@@ -1407,6 +1411,7 @@ pub mod parse {
         E::Group: FromIterator<E>,
     {
         // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
+        // FIXME: avoid using "magic chars" here
         from_chars(Some('(').into_iter().chain(iter).chain(Some(')'))).map(E::unwrap_group)
     }
 
@@ -1481,10 +1486,10 @@ pub mod shape {
     /// ```
     ///
     /// if it is impossible or inefficient to implement the stronger contract.
-    pub trait Shape<E>
+    pub trait Shape<E>: Matcher<E>
     where
         E: Expression,
-        Self: Into<Expr<E>> + Matcher<E> + TryFrom<Expr<E>, Error = <Self as Matcher<E>>::Error>,
+        Self: Into<Expr<E>> + TryFrom<Expr<E>, Error = <Self as Matcher<E>>::Error>,
     {
         /// Parses an `Expression::Atom` into `Self`.
         #[inline]
@@ -1578,12 +1583,11 @@ pub mod pattern {
         P::Atom: PartialEq<E::Atom>,
     {
         fn matches_atom(&self, atom: &E::Atom) -> bool {
-            self.0.cases().atom().map_or(false, |a| a == atom)
+            self.0.atom().map_or(false, |a| a == atom)
         }
 
         fn matches_group(&self, group: GroupRef<E>) -> bool {
             self.0
-                .cases()
                 .group()
                 .map_or(false, move |g| ExprRef::<P>::eq_groups::<E>(&g, &group))
         }
@@ -1854,10 +1858,7 @@ pub mod pattern {
             E: Expression,
         {
             let _ = atom;
-            pattern
-                .cases()
-                .atom()
-                .map_or(false, BasicShape::matches_atom)
+            pattern.atom().map_or(false, BasicShape::matches_atom)
         }
 
         fn matches_group<E>(pattern: ExprRef<P>, group: GroupRef<E>) -> bool
