@@ -77,6 +77,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is a `Group`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     fn unwrap_atom(self) -> &'e E::Atom
@@ -91,6 +93,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is an `Atom`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     fn unwrap_group(self) -> GroupRef<'e, E>
@@ -357,6 +361,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is a `Group`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     fn unwrap_atom(self) -> Self::Atom {
@@ -368,6 +374,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is an `Atom`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     fn unwrap_group(self) -> Self::Group {
@@ -554,31 +562,43 @@ where
     }
 }
 
-/// Group Type Wrapper Trait
+/// Multi-Expressions Module
 #[cfg(feature = "multi")]
 #[cfg_attr(docsrs, doc(cfg(feature = "multi")))]
-pub trait HasGroupType<'e, E, T>
-where
-    E: Expression,
-{
-    /// Returns underlying group type.
-    fn group_type(&self) -> &'e T;
-}
+pub mod multi {
+    use super::*;
 
-/// Multi-Expression Trait
-#[cfg(feature = "multi")]
-#[cfg_attr(docsrs, doc(cfg(feature = "multi")))]
-pub trait MultiExpression
-where
-    Self: Expression,
-    for<'e> GroupRef<'e, Self>: HasGroupType<'e, Self, Self::GroupType>,
-{
-    /// Group Type
-    type GroupType;
+    /// MultiGroup Reference
+    pub trait MultiGroupReference<E>: GroupReference<E>
+    where
+        E: Expression,
+    {
+        /// MultiGroup Kind
+        type Kind<'e>;
 
-    /// Returns `Self::GroupType` if `Expression` is a group.
-    fn group_type(&self) -> Option<&Self::GroupType> {
-        self.group().map(move |g| g.group_type())
+        /// Returns the multi-group kind.
+        fn kind(&self) -> Self::Kind<'_>;
+    }
+
+    /// MultiGroup Trait
+    pub trait MultiGroup<E>: Group<E>
+    where
+        E: Expression,
+    {
+        /// Multi Reference Type
+        type MultiRef<'e>: MultiGroupReference<E>
+        where
+            E: 'e;
+
+        /// Returns a inner reference to the multi group.
+        fn multi_reference(&self) -> Self::MultiRef<'_>;
+    }
+
+    /// Multi-Expression Trait
+    pub trait MultiExpression: Expression
+    where
+        <Self as Expression>::Group: MultiGroup<Self>,
+    {
     }
 }
 
@@ -657,6 +677,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is a `Group`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     pub fn unwrap_atom(self) -> &'e E::Atom {
@@ -668,6 +690,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is an `Atom`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     pub fn unwrap_group(self) -> GroupRef<'e, E> {
@@ -913,6 +937,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is a `Group`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     pub fn unwrap_atom(self) -> E::Atom {
@@ -924,6 +950,8 @@ where
     /// # Panics
     ///
     /// Panics if the `self` value is an `Atom`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     pub fn unwrap_group(self) -> E::Group {
@@ -1401,6 +1429,8 @@ pub mod parse {
     /// # Panics
     ///
     /// Panics if the parsing was a valid `Expression` but not a `Group`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     pub fn from_chars_as_group<I, E>(iter: I) -> Result<E::Group>
@@ -1420,6 +1450,8 @@ pub mod parse {
     /// # Panics
     ///
     /// Panics if the parsing was a valid `Expression` but not a `Group`.
+    #[cfg(not(feature = "no-panic"))]
+    #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
     #[track_caller]
     pub fn from_str_as_group<S, E>(s: S) -> Result<E::Group>
@@ -1986,6 +2018,7 @@ pub mod vec {
         }
     }
 
+    /// Vec Multi-Expressions
     #[cfg(feature = "multi")]
     #[cfg_attr(docsrs, doc(cfg(feature = "multi")))]
     pub mod multi {
@@ -2086,13 +2119,6 @@ pub mod vec {
 
             fn reference(&self) -> Self::Ref<'_> {
                 (&self.0, &self.1)
-            }
-        }
-
-        impl<'e, A, G> HasGroupType<'e, MultiExpr<A, G>, G> for GroupRef<'e, MultiExpr<A, G>> {
-            #[inline]
-            fn group_type(&self) -> &'e G {
-                &self.1
             }
         }
     }
