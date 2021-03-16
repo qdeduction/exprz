@@ -1955,7 +1955,7 @@ pub mod vec {
         }
     }
 
-    impl<A> From<Expr<A>> for super::Expr<Expr<A>> {
+    impl<A> From<Expr<A>> for crate::Expr<Expr<A>> {
         #[inline]
         fn from(expr: Expr<A>) -> Self {
             match expr {
@@ -1990,6 +1990,7 @@ pub mod vec {
     #[cfg_attr(docsrs, doc(cfg(feature = "multi")))]
     pub mod multi {
         use super::*;
+
         /// Vector `MultiExpression` over `String`s
         pub type StringMultiExpr<G = ()> = MultiExpr<String, G>;
 
@@ -2027,7 +2028,7 @@ pub mod vec {
             }
         }
 
-        impl<A, G> From<MultiExpr<A, G>> for super::Expr<MultiExpr<A, G>> {
+        impl<A, G> From<MultiExpr<A, G>> for crate::Expr<MultiExpr<A, G>> {
             #[inline]
             fn from(expr: MultiExpr<A, G>) -> Self {
                 match expr {
@@ -2059,12 +2060,39 @@ pub mod vec {
             }
         }
 
-        impl<A, G> Group<MultiExpr<A, G>> for (Vec<MultiExpr<A, G>>, G) {}
+        impl<A, G> GroupReference<MultiExpr<A, G>> for (&Vec<MultiExpr<A, G>>, &G) {
+            type Item<'e>
+            where
+                A: 'e,
+                G: 'e,
+            = &'e MultiExpr<A, G>;
+
+            type Iter<'e>
+            where
+                A: 'e,
+                G: 'e,
+            = slice::Iter<'e, MultiExpr<A, G>>;
+
+            fn iter(&self) -> Self::Iter<'_> {
+                todo!()
+            }
+        }
+
+        impl<A, G> Group<MultiExpr<A, G>> for (Vec<MultiExpr<A, G>>, G) {
+            type Ref<'e>
+            where
+                Self: 'e,
+            = (&'e Vec<MultiExpr<A, G>>, &'e G);
+
+            fn reference(&self) -> Self::Ref<'_> {
+                (&self.0, &self.1)
+            }
+        }
 
         impl<'e, A, G> HasGroupType<'e, MultiExpr<A, G>, G> for GroupRef<'e, MultiExpr<A, G>> {
             #[inline]
             fn group_type(&self) -> &'e G {
-                self.1
+                &self.1
             }
         }
     }
@@ -2184,7 +2212,7 @@ pub mod buffered {
         }
     }
 
-    impl<T> From<Expr<T>> for super::Expr<Expr<T>> {
+    impl<T> From<Expr<T>> for crate::Expr<Expr<T>> {
         #[inline]
         fn from(expr: Expr<T>) -> Self {
             let _ = expr;

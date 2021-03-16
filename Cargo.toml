@@ -1,6 +1,6 @@
 [package]
 name = "exprz"
-version = "0.0.13"
+version = "0.0.14"
 edition = "2018"
 authors = ["Brandon H. Gomes <bh.gomes@rutgers.edu>"]
 documentation = "https://docs.rs/exprz"
@@ -32,6 +32,9 @@ alloc = []
 # [EXPERIMENTAL] Adds buffered expression
 buffered = ["alloc"]
 
+# [EXPERIMENTAL] Adds multi-expressions
+multi = []
+
 # [EXPERIMENTAL] Adds parsing support
 parse = []
 
@@ -42,10 +45,21 @@ pattern = []
 shape = []
 
 # Enables all stable features
-stable = ["alloc"]
+stable = [
+    "alloc",
+]
 
 # Enables all experimental features
-experimental = ["shape", "pattern", "buffered"]
+experimental = [
+    "buffered",
+    "multi",
+    "parse",
+    "pattern",
+    "shape",
+]
 
 # Enables all features
-all = ["stable", "experimental"]
+all = [
+    "stable", 
+    "experimental",
+]
