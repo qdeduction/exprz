@@ -630,6 +630,7 @@ where
     }
 
     /// Checks if two groups are equal.
+    #[inline]
     pub fn eq_groups<'r, R>(
         lhs: &<E::Group as Group<E>>::Ref<'e>,
         rhs: &<R::Group as Group<R>>::Ref<'r>,
@@ -640,6 +641,27 @@ where
     {
         util::eq_by(lhs.iter(), rhs.iter(), move |l, r| l.cases().eq(&r.cases()))
     }
+}
+
+impl<'e, E> Clone for ExprRef<'e, E>
+where
+    E: Expression,
+    <E::Group as Group<E>>::Ref<'e>: Clone,
+{
+    #[inline]
+    fn clone(&self) -> Self {
+        match &self {
+            Self::Atom(atom) => Self::Atom(atom),
+            Self::Group(group) => Self::Group(group.clone()),
+        }
+    }
+}
+
+impl<'e, E> Copy for ExprRef<'e, E>
+where
+    E: Expression,
+    <E::Group as Group<E>>::Ref<'e>: Copy,
+{
 }
 
 impl<'l, 'r, L, R> PartialEq<ExprRef<'r, R>> for ExprRef<'l, L>
@@ -659,7 +681,7 @@ where
 }
 
 /// Canonical Concrete `Expression` Type
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Debug)]
 pub enum Expr<E>
 where
     E: Expression,
@@ -669,43 +691,6 @@ where
 
     /// Grouped expression
     Group(E::Group),
-}
-
-impl<'e, E> From<ExprRef<'e, E>> for Expr<E>
-where
-    E::Atom: Clone,
-    E::Group: FromIterator<E>,
-    E: Expression,
-{
-    #[must_use]
-    #[inline]
-    fn from(expr_ref: ExprRef<'e, E>) -> Self {
-        match expr_ref {
-            ExprRef::Atom(atom) => Self::Atom(atom.clone()),
-            ExprRef::Group(group) => Self::Group(
-                group
-                    .iter()
-                    .map(move |e| E::from_expr(e.cases().into()))
-                    .collect(),
-            ),
-        }
-    }
-}
-
-#[cfg(feature = "parse")]
-#[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
-impl<E> FromStr for Expr<E>
-where
-    E: Expression,
-    E::Atom: FromIterator<char>,
-    E::Group: FromIterator<E>,
-{
-    type Err = parse::Error;
-
-    #[inline]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        E::from_str(s).map(E::into)
-    }
 }
 
 impl<E> Expr<E>
@@ -845,14 +830,107 @@ where
     }
 }
 
+impl<E> Clone for Expr<E>
+where
+    E: Expression,
+    E::Atom: Clone,
+    E::Group: FromIterator<E>,
+{
+    #[inline]
+    fn clone(&self) -> Self {
+        match self {
+            Self::Atom(atom) => Self::Atom(atom.clone()),
+            Self::Group(group) => Self::Group(
+                group
+                    .reference()
+                    .iter()
+                    .map(move |e| E::from_expr(e.cases().into()))
+                    .collect(),
+            ),
+        }
+    }
+}
+
 impl<E> Default for Expr<E>
 where
     E: Expression,
     E::Group: FromIterator<E>,
 {
     /// Returns the empty group expression.
+    #[inline]
     fn default() -> Self {
         E::default().into()
+    }
+}
+
+impl<L, R> PartialEq<Expr<R>> for Expr<L>
+where
+    L: Expression,
+    R: Expression,
+    L::Atom: PartialEq<R::Atom>,
+{
+    /// Checks if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    #[inline]
+    fn eq(&self, other: &Expr<R>) -> bool {
+        ExprRef::from(self).eq(&ExprRef::from(other))
+    }
+}
+
+impl<E> Eq for Expr<E>
+where
+    E: Expression,
+    E::Atom: PartialEq,
+{
+}
+
+impl<'e, E> From<ExprRef<'e, E>> for Expr<E>
+where
+    E: Expression,
+    E::Atom: Clone,
+    E::Group: FromIterator<E>,
+{
+    #[must_use]
+    #[inline]
+    fn from(expr_ref: ExprRef<'e, E>) -> Self {
+        match expr_ref {
+            ExprRef::Atom(atom) => Self::Atom(atom.clone()),
+            ExprRef::Group(group) => Self::Group(
+                group
+                    .iter()
+                    .map(move |e| E::from_expr(e.cases().into()))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl<'e, E> From<&'e Expr<E>> for ExprRef<'e, E>
+where
+    E: Expression,
+{
+    #[must_use]
+    #[inline]
+    fn from(expr: &'e Expr<E>) -> Self {
+        match expr {
+            Expr::Atom(atom) => Self::Atom(atom),
+            Expr::Group(group) => Self::Group(group.reference()),
+        }
+    }
+}
+
+#[cfg(feature = "parse")]
+#[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
+impl<E> FromStr for Expr<E>
+where
+    E: Expression,
+    E::Atom: FromIterator<char>,
+    E::Group: FromIterator<E>,
+{
+    type Err = parse::Error;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        E::from_str(s).map(E::into)
     }
 }
 
