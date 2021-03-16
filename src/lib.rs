@@ -150,6 +150,16 @@ where
 
     /// Returns group reference iterator.
     fn iter(&self) -> Self::Iter<'_>;
+
+    /// Returns new owned group from `GroupReference`.
+    #[inline]
+    fn to_owned(&self) -> E::Group
+    where
+        E::Atom: Clone,
+        E::Group: FromIterator<E>,
+    {
+        self.iter().map(Reference::to_owned).collect()
+    }
 }
 
 impl<E> GroupReference<E> for &[E]
@@ -206,6 +216,16 @@ where
 
     /// Returns an inner reference to the group.
     fn reference(&self) -> Self::Ref<'_>;
+
+    /// Returns a cloned expression group.
+    #[inline]
+    fn clone(&self) -> E::Group
+    where
+        E::Atom: Clone,
+        E::Group: FromIterator<E>,
+    {
+        self.reference().to_owned()
+    }
 }
 
 #[cfg(feature = "alloc")]
