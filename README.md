@@ -6,9 +6,9 @@
 
 # ExprZ
 
-[![Workflow Status](https://img.shields.io/github/workflow/status/qdeduction/exprz/main?label=workflow&style=flat-square)](https://github.com/qdeduction/exprz/actions)
-[![Latest Version](https://img.shields.io/crates/v/exprz.svg?style=flat-square)](https://crates.io/crates/exprz)
-[![Documentation](https://img.shields.io/badge/docs-latest-blue?style=flat-square)](https://docs.rs/exprz)
+[![Workflow Status](https://flat.badgen.net/github/checks/qdeduction/exprz?label=workflow)](https://github.com/qdeduction/exprz/actions)
+[![Project Crate](https://flat.badgen.net/crates/v/exprz)](https://crates.io/crates/exprz)
+[![Documentation](https://flat.badgen.net/badge/docs/latest/blue)](https://docs.rs/exprz)
 
 _An Expression Library_
 
@@ -44,9 +44,9 @@ This project is licensed under the [ISC License](https://opensource.org/licenses
 ---
 <div align="center">
 
-[![Author](https://img.shields.io/badge/-bhgomes-blue?style=for-the-badge)](https://github.com/bhgomes)
+[![Author](https://img.shields.io/badge/-AUTHOR-blue?style=for-the-badge)](https://github.com/bhgomes)
 [![License](https://img.shields.io/badge/-LICENSE-lightgray?style=for-the-badge)](LICENSE)
-[![GitHub Repo](https://img.shields.io/badge/-GitHub-black?style=for-the-badge)](https://github.com/qdeduction/exprz)
+[![Source](https://img.shields.io/badge/-SOURCE-black?style=for-the-badge)](https://github.com/qdeduction/exprz)
 
 </div>
 
