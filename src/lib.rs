@@ -177,7 +177,7 @@ where
 
     /// Performs substitution over the expression group by reference.
     #[inline]
-    fn substitute_ref<F>(&self, mut f: F) -> E
+    fn substitute_ref<F>(&self, mut f: F) -> E::Group
     where
         E::Group: FromIterator<E>,
         F: FnMut(&E::Atom) -> E,
@@ -253,7 +253,7 @@ where
 
     /// Performs substitution over the expression group.
     #[inline]
-    fn substitute<F>(self, mut f: F) -> E
+    fn substitute<F>(self, mut f: F) -> E::Group
     where
         Self: Sized + IntoIterator<Item = E>,
         E::Group: FromIterator<E> + IntoIterator<Item = E>,
@@ -264,7 +264,7 @@ where
 
     /// Performs substitution over the expression group by reference.
     #[inline]
-    fn substitute_ref<F>(&self, f: F) -> E
+    fn substitute_ref<F>(&self, f: F) -> E::Group
     where
         E::Group: FromIterator<E>,
         F: FnMut(&E::Atom) -> E,
@@ -814,7 +814,7 @@ where
     }
 
     #[inline]
-    fn substitute_ref_group_inner<I, F>(iter: I, f: &mut F) -> E
+    fn substitute_ref_group_inner<I, F>(iter: I, f: &mut F) -> E::Group
     where
         E: 'e,
         I: Iterator,
@@ -822,10 +822,8 @@ where
         E::Group: FromIterator<E>,
         F: FnMut(&E::Atom) -> E,
     {
-        E::from_group(
-            iter.map(move |e| e.cases().substitute_ref_inner(f))
-                .collect(),
-        )
+        iter.map(move |e| e.cases().substitute_ref_inner(f))
+            .collect()
     }
 
     #[inline]
@@ -836,7 +834,9 @@ where
     {
         match self {
             Self::Atom(atom) => f(atom),
-            Self::Group(group) => ExprRef::substitute_ref_group_inner(group.iter(), f),
+            Self::Group(group) => {
+                E::from_group(ExprRef::substitute_ref_group_inner(group.iter(), f))
+            }
         }
     }
 
@@ -1050,13 +1050,13 @@ where
     }
 
     #[inline]
-    fn substitute_group_inner<I, F>(iter: I, f: &mut F) -> E
+    fn substitute_group_inner<I, F>(iter: I, f: &mut F) -> E::Group
     where
         I: Iterator<Item = E>,
         E::Group: FromIterator<E> + IntoIterator<Item = E>,
         F: FnMut(E::Atom) -> E,
     {
-        E::from_group(iter.map(move |e| e.into().substitute_inner(f)).collect())
+        iter.map(move |e| e.into().substitute_inner(f)).collect()
     }
 
     fn substitute_inner<F>(self, f: &mut F) -> E
@@ -1066,7 +1066,7 @@ where
     {
         match self {
             Self::Atom(atom) => f(atom),
-            Self::Group(group) => Self::substitute_group_inner(group.into_iter(), f),
+            Self::Group(group) => E::from_group(Self::substitute_group_inner(group.into_iter(), f)),
         }
     }
 }
