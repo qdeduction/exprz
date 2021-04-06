@@ -166,6 +166,7 @@ where
     fn iter(&self) -> Self::Iter<'_>;
 
     /// Returns the length of the group reference if it is known exactly.
+    #[inline]
     fn len(&self) -> usize
     where
         for<'i> Self::Iter<'i>: ExactSizeIterator,
@@ -174,11 +175,18 @@ where
     }
 
     /// Returns `true` if the length of the group reference is known to be exactly zero.
+    #[inline]
     fn is_empty(&self) -> bool
     where
         for<'i> Self::Iter<'i>: ExactSizeIterator,
     {
         self.len() == 0
+    }
+
+    /// Returns a reference to an element.
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item<'_>> {
+        self.iter().nth(index)
     }
 
     /// Returns new owned group from `GroupReference`.
@@ -258,6 +266,7 @@ where
     fn reference(&self) -> Self::Ref<'_>;
 
     /// Returns the length of the group if it is known exactly.
+    #[inline]
     fn len(&self) -> usize
     where
         for<'e, 'i> <Self::Ref<'e> as GroupReference<E>>::Iter<'i>: ExactSizeIterator,
@@ -266,11 +275,12 @@ where
     }
 
     /// Returns `true` if the length of the group is known to be exactly zero.
+    #[inline]
     fn is_empty(&self) -> bool
     where
         for<'e, 'i> <Self::Ref<'e> as GroupReference<E>>::Iter<'i>: ExactSizeIterator,
     {
-        self.len() == 0
+        self.reference().is_empty()
     }
 
     /// Returns a cloned expression group.
