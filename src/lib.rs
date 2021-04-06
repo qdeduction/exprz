@@ -165,22 +165,23 @@ where
     /// Returns group reference iterator.
     fn iter(&self) -> Self::Iter<'_>;
 
+    /// Returns a size hint for the underlying iterator.
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter().size_hint()
+    }
+
     /// Returns the length of the group reference if it is known exactly.
     #[inline]
-    fn len(&self) -> usize
-    where
-        for<'i> Self::Iter<'i>: ExactSizeIterator,
-    {
-        self.iter().len()
+    fn len(&self) -> Option<usize> {
+        let (min, max) = self.size_hint();
+        max.filter(move |m| *m == min)
     }
 
     /// Returns `true` if the length of the group reference is known to be exactly zero.
     #[inline]
-    fn is_empty(&self) -> bool
-    where
-        for<'i> Self::Iter<'i>: ExactSizeIterator,
-    {
-        self.len() == 0
+    fn is_empty(&self) -> bool {
+        matches!(self.len(), Some(0))
     }
 
     /// Returns a reference to an element.
@@ -265,21 +266,21 @@ where
     /// Returns an inner reference to the group.
     fn reference(&self) -> Self::Ref<'_>;
 
+    /// Returns a size hint for the underlying iterator.
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.reference().size_hint()
+    }
+
     /// Returns the length of the group if it is known exactly.
     #[inline]
-    fn len(&self) -> usize
-    where
-        for<'e, 'i> <Self::Ref<'e> as GroupReference<E>>::Iter<'i>: ExactSizeIterator,
-    {
+    fn len(&self) -> Option<usize> {
         self.reference().len()
     }
 
     /// Returns `true` if the length of the group is known to be exactly zero.
     #[inline]
-    fn is_empty(&self) -> bool
-    where
-        for<'e, 'i> <Self::Ref<'e> as GroupReference<E>>::Iter<'i>: ExactSizeIterator,
-    {
+    fn is_empty(&self) -> bool {
         self.reference().is_empty()
     }
 
@@ -2275,7 +2276,13 @@ pub mod buffered {
             self.index += 1;
             todo!()
         }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            todo!()
+        }
     }
+
+    impl<T> ExactSizeIterator for ExprViewIterator<'_, T> {}
 
     impl<T> Expression for Expr<T> {
         type Atom = Vec<T>;
