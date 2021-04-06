@@ -166,19 +166,17 @@ where
     fn iter(&self) -> Self::Iter<'_>;
 
     /// Returns the length of the group reference if it is known exactly.
-    fn len<'e>(&'e self) -> usize
+    fn len(&self) -> usize
     where
-        E: 'e,
-        Self::Iter<'e>: ExactSizeIterator,
+        for<'i> Self::Iter<'i>: ExactSizeIterator,
     {
         self.iter().len()
     }
 
     /// Returns `true` if the length of the group reference is known to be exactly zero.
-    fn is_empty<'e>(&'e self) -> bool
+    fn is_empty(&self) -> bool
     where
-        E: 'e,
-        Self::Iter<'e>: ExactSizeIterator,
+        for<'i> Self::Iter<'i>: ExactSizeIterator,
     {
         self.len() == 0
     }
@@ -260,19 +258,17 @@ where
     fn reference(&self) -> Self::Ref<'_>;
 
     /// Returns the length of the group if it is known exactly.
-    fn len<'e>(&'e self) -> usize
+    fn len(&self) -> usize
     where
-        E: 'e,
-        for<'s> <Self::Ref<'e> as GroupReference<E>>::Iter<'s>: ExactSizeIterator,
+        for<'e, 'i> <Self::Ref<'e> as GroupReference<E>>::Iter<'i>: ExactSizeIterator,
     {
         self.reference().len()
     }
 
     /// Returns `true` if the length of the group is known to be exactly zero.
-    fn is_empty<'e>(&'e self) -> bool
+    fn is_empty(&self) -> bool
     where
-        E: 'e,
-        for<'s> <Self::Ref<'e> as GroupReference<E>>::Iter<'s>: ExactSizeIterator,
+        for<'e, 'i> <Self::Ref<'e> as GroupReference<E>>::Iter<'i>: ExactSizeIterator,
     {
         self.len() == 0
     }
@@ -344,8 +340,11 @@ where
 /// Expression Group Reference Alias
 pub type GroupRef<'e, E> = <<E as Expression>::Group as Group<E>>::Ref<'e>;
 
+/// Expression Group Reference Iterator Alias
+pub type GroupRefIter<'e, 'i, E> = <GroupRef<'e, E> as GroupReference<E>>::Iter<'i>;
+
 /// Expression Group Reference Iterator Item Alias
-pub type GroupRefItem<'e, E> = <GroupRef<'e, E> as GroupReference<E>>::Item<'e>;
+pub type GroupRefItem<'e, 'i, E> = <GroupRef<'e, E> as GroupReference<E>>::Item<'i>;
 
 /// Expression Trait
 pub trait Expression
