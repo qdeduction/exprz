@@ -1608,13 +1608,13 @@ pub mod shape {
     ///
     /// The following should hold for all `expr: E`:
     ///
-    /// ```
+    /// ```ignore
     /// matches(&expr).err() == expr.try_into().err()
     /// ```
     ///
     /// but can be weakend to the following,
     ///
-    /// ```
+    /// ```ignore
     /// matches(&expr).is_err() == expr.try_into().is_err()
     /// ```
     ///
