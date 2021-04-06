@@ -284,6 +284,15 @@ where
         self.reference().is_empty()
     }
 
+    /// Builds an empty group.
+    #[inline]
+    fn empty() -> E::Group
+    where
+        E::Group: FromIterator<E>,
+    {
+        E::Group::from_iter(None)
+    }
+
     /// Returns a cloned expression group.
     #[inline]
     fn clone(&self) -> E::Group
@@ -484,7 +493,7 @@ where
     where
         Self::Group: FromIterator<Self>,
     {
-        None.into_iter().collect()
+        Self::Group::empty()
     }
 
     /// Returns the default value of an `Expression`: the empty group.
