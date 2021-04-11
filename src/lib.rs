@@ -19,6 +19,9 @@ use alloc::vec::Vec;
 #[cfg(feature = "parse")]
 use core::str::FromStr;
 
+#[cfg(feature = "rayon")]
+use rayon::iter::{FromParallelIterator, IndexedParallelIterator, ParallelIterator};
+
 /// Package Version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -252,6 +255,58 @@ where
         (self[..]).iter()
     }
 }
+
+/// Parallel [`Expression Group`](Expression::Group) Reference Trait
+#[cfg(feature = "rayon")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+pub trait ParallelGroupReference<E>: GroupReference<E>
+where
+    E: Expression,
+{
+    /// Parallel Iterator over [`GroupReference::Item`]
+    type ParIter<'e>: ParallelIterator<Item = <Self as GroupReference<E>>::Item<'e>>
+    where
+        E: 'e;
+
+    /// Returns a parallel group reference iterator.
+    fn par_iter(&self) -> Self::ParIter<'_>;
+}
+
+/// Indexed Parallel [`Expression Group`](Expression::Group) Reference Trait
+#[cfg(feature = "rayon")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+pub trait IndexedParallelGroupReference<E>: GroupReference<E>
+where
+    E: Expression,
+{
+    /// Indexed Parallel Iterator over [`GroupReference::Item`]
+    type IndexedParIter<'e>: IndexedParallelIterator<Item = <Self as GroupReference<E>>::Item<'e>>
+    where
+        E: 'e;
+
+    /// Returns an indexed parallel group reference iterator.
+    fn indexed_par_iter(&self) -> Self::IndexedParIter<'_>;
+}
+
+/* TODO:
+#[cfg(feature = "rayon")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+impl<E, I> ParallelGroupReference<E> for I
+where
+    E: Expression,
+    I: IndexedParallelGroupReference<E>,
+{
+    type ParIter<'e>
+    where
+        E: 'e,
+    = I::IndexedParIter<'e>;
+
+    #[inline]
+    fn par_iter(&self) -> Self::ParIter<'_> {
+        self.indexed_par_iter()
+    }
+}
+*/
 
 /// [`Expression Group`](Expression::Group) Trait
 pub trait Group<E>
@@ -661,6 +716,20 @@ where
     {
         ExprRef::substitute_ref(&self.cases(), f)
     }
+
+    /// Substitutes, in parallel, an [`Expression`] into each [`&Atom`](Expression::Atom) of `&self`.
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    #[inline]
+    fn parallel_substitute_ref<F>(&self, f: F) -> Self
+    where
+        Self: Send,
+        Self::Group: FromParallelIterator<Self>,
+        for<'r> GroupRef<'r, Self>: ParallelGroupReference<Self>,
+        F: Send + Sync + Fn(&Self::Atom) -> Self,
+    {
+        ExprRef::parallel_substitute_ref(&self.cases(), f)
+    }
 }
 
 /// Multi-Expressions Module
@@ -803,30 +872,6 @@ where
         self.group().unwrap()
     }
 
-    /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
-    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
-    pub fn is_subexpression<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
-    where
-        R: Expression,
-        E::Atom: PartialEq<R::Atom>,
-    {
-        match self {
-            Self::Atom(atom) => match other {
-                ExprRef::Atom(other) => atom == other,
-                ExprRef::Group(other) => {
-                    other.iter().any(move |e| self.is_subexpression(&e.cases()))
-                }
-            },
-            Self::Group(group) => match other {
-                ExprRef::Atom(_) => false,
-                ExprRef::Group(other) => {
-                    other.iter().any(move |e| self.is_subexpression(&e.cases()))
-                        || Self::eq_groups::<R>(group, other)
-                }
-            },
-        }
-    }
-
     /// Returns new owned copy of the underlying expression.
     #[allow(clippy::wrong_self_convention)]
     #[inline]
@@ -882,9 +927,9 @@ where
     fn substitute_ref_group_inner<I, F>(iter: I, f: &mut F) -> E::Group
     where
         E: 'e,
+        E::Group: FromIterator<E>,
         I: Iterator,
         I::Item: Reference<'e, E>,
-        E::Group: FromIterator<E>,
         F: FnMut(&E::Atom) -> E,
     {
         iter.map(move |e| e.cases().substitute_ref_inner(f))
@@ -905,7 +950,111 @@ where
         }
     }
 
-    /// Checks if two [`Group`](Expression::Group) are equal pointwise.
+    /// Substitutes an [`Expression`] into each [`&Atom`](Expression::Atom) of `&self`.
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    #[inline]
+    pub fn parallel_substitute_ref<F>(&self, f: F) -> E
+    where
+        E: Send,
+        E::Group: FromParallelIterator<E>,
+        for<'r> GroupRef<'r, E>: ParallelGroupReference<E>,
+        F: Send + Sync + Fn(&E::Atom) -> E,
+    {
+        self.parallel_substitute_ref_inner(&f)
+    }
+
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    #[inline]
+    fn parallel_substitute_ref_group_inner<I, F>(iter: I, f: &F) -> E::Group
+    where
+        E: 'e + Send,
+        E::Group: FromParallelIterator<E>,
+        for<'r> GroupRef<'r, E>: ParallelGroupReference<E>,
+        I: ParallelIterator,
+        I::Item: Reference<'e, E>,
+        F: Send + Sync + Fn(&E::Atom) -> E,
+    {
+        iter.map(move |e| e.cases().parallel_substitute_ref_inner(f))
+            .collect()
+    }
+
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    #[inline]
+    fn parallel_substitute_ref_inner<F>(&self, f: &F) -> E
+    where
+        E: Send,
+        E::Group: FromParallelIterator<E>,
+        for<'r> GroupRef<'r, E>: ParallelGroupReference<E>,
+        F: Send + Sync + Fn(&E::Atom) -> E,
+    {
+        match self {
+            Self::Atom(atom) => f(atom),
+            Self::Group(group) => E::from_group(ExprRef::parallel_substitute_ref_group_inner(
+                group.par_iter(),
+                f,
+            )),
+        }
+    }
+
+    /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
+    pub fn is_subexpression<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
+    where
+        R: Expression,
+        E::Atom: PartialEq<R::Atom>,
+    {
+        match self {
+            Self::Atom(atom) => match other {
+                ExprRef::Atom(other) => atom == other,
+                ExprRef::Group(other) => {
+                    other.iter().any(move |e| self.is_subexpression(&e.cases()))
+                }
+            },
+            Self::Group(group) => match other.group_ref() {
+                Some(other) => {
+                    other.iter().any(move |e| self.is_subexpression(&e.cases()))
+                        || Self::eq_groups::<R>(group, other)
+                }
+                _ => false,
+            },
+        }
+    }
+
+    /// Checks in parallel if an [`Expression`] is a sub-tree of another [`Expression`] using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    pub fn parallel_is_subexpression<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
+    where
+        E::Atom: Sync,
+        for<'g> GroupRef<'g, E>: Sync + IndexedParallelGroupReference<E>,
+        R: Expression,
+        for<'g> GroupRef<'g, R>: IndexedParallelGroupReference<R>,
+        E::Atom: PartialEq<R::Atom>,
+    {
+        match self {
+            Self::Atom(atom) => match other {
+                ExprRef::Atom(other) => atom == other,
+                ExprRef::Group(other) => other
+                    .indexed_par_iter()
+                    .any(move |e| self.parallel_is_subexpression(&e.cases())),
+            },
+            Self::Group(group) => match other.group_ref() {
+                Some(other) => {
+                    other
+                        .indexed_par_iter()
+                        .any(move |e| self.parallel_is_subexpression(&e.cases()))
+                        || Self::parallel_eq_groups::<R>(group, other)
+                }
+                _ => false,
+            },
+        }
+    }
+
+    /// Checks if two [`Groups`](Expression::Group) are equal pointwise.
     #[inline]
     pub fn eq_groups<'r, R>(lhs: &GroupRef<'e, E>, rhs: &GroupRef<'r, R>) -> bool
     where
@@ -913,6 +1062,40 @@ where
         E::Atom: PartialEq<R::Atom>,
     {
         util::eq_by(lhs.iter(), rhs.iter(), move |l, r| l.cases().eq(&r.cases()))
+    }
+
+    /// Checks in parallel if two [`Expressions`](Expression) are equal using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    #[inline]
+    pub fn parallel_eq<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
+    where
+        for<'g> GroupRef<'g, E>: IndexedParallelGroupReference<E>,
+        R: Expression,
+        for<'g> GroupRef<'g, R>: IndexedParallelGroupReference<R>,
+        E::Atom: PartialEq<R::Atom>,
+    {
+        match (self, other) {
+            (Self::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
+            (Self::Group(lhs), ExprRef::Group(rhs)) => Self::parallel_eq_groups::<R>(lhs, rhs),
+            _ => false,
+        }
+    }
+
+    /// Checks in parallel if two [`Groups`](Expression::Group) are equal pointwise.
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    pub fn parallel_eq_groups<'r, R>(lhs: &GroupRef<'e, E>, rhs: &GroupRef<'r, R>) -> bool
+    where
+        for<'g> GroupRef<'g, E>: IndexedParallelGroupReference<E>,
+        R: Expression,
+        for<'g> GroupRef<'g, R>: IndexedParallelGroupReference<R>,
+        E::Atom: PartialEq<R::Atom>,
+    {
+        lhs.indexed_par_iter()
+            .zip(rhs.indexed_par_iter())
+            .all(move |(l, r)| l.cases().parallel_eq(&r.cases()))
     }
 }
 
@@ -945,6 +1128,7 @@ where
 {
     /// Checks if two [`Expressions`](Expression) are equal using
     /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
+    #[inline]
     fn eq(&self, other: &ExprRef<'r, R>) -> bool {
         match (self, other) {
             (Self::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
@@ -1119,8 +1303,8 @@ where
     #[inline]
     fn substitute_group_inner<I, F>(iter: I, f: &mut F) -> E::Group
     where
-        I: Iterator<Item = E>,
         E::Group: FromIterator<E> + IntoIterator<Item = E>,
+        I: Iterator<Item = E>,
         F: FnMut(E::Atom) -> E,
     {
         iter.map(move |e| e.into().substitute_inner(f)).collect()
