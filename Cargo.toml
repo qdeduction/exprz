@@ -32,6 +32,9 @@ alloc = []
 # [EXPERIMENTAL] Adds buffered expression
 buffered = ["alloc"]
 
+# [EXPERIMENTAL] Adds graph algorithms
+graph = []
+
 # [EXPERIMENTAL] Adds multi-expressions
 multi = []
 
@@ -47,6 +50,9 @@ pattern = []
 # [EXPERIMENTAL] Adds shape trait
 shape = []
 
+# [EXPERIMENTAL] Adds traversal algorithms
+visit = []
+
 # Enables all stable features
 stable = [
     "alloc",
@@ -55,6 +61,7 @@ stable = [
 # Enables all experimental features
 experimental = [
     "buffered",
+    "graph",
     "multi",
     "no-panic",
     "parse",
@@ -63,6 +70,7 @@ experimental = [
     "rayon",
     "serde",
     "shape",
+    "visit",
 ]
 
 # Enables all features

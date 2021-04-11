@@ -2553,6 +2553,16 @@ pub mod pattern {
     }
 }
 
+/// [`Expression`] Graph Algorithms
+#[cfg(feature = "graph")]
+#[cfg_attr(docsrs, doc(cfg(feature = "graph")))]
+pub mod graph {}
+
+/// [`Expression`] Traversal Algorithms
+#[cfg(feature = "visit")]
+#[cfg_attr(docsrs, doc(cfg(feature = "visit")))]
+pub mod visit {}
+
 /// Vector [`Expressions`](Expression)
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
