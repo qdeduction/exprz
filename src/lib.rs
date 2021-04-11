@@ -22,15 +22,15 @@ use core::str::FromStr;
 /// Package Version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Expression Reference Trait
+/// [`Expression`] Reference Trait
 pub trait Reference<'e, E>: From<&'e E>
 where
     E: 'e + Expression,
 {
-    /// Returns inner expression reference.
+    /// Returns the inner expression reference.
     fn cases(self) -> ExprRef<'e, E>;
 
-    /// Checks if the `Reference` is atomic.
+    /// Checks if the [`Reference`] is an atomic expression [`&E::Atom`](Expression::Atom).
     #[allow(clippy::wrong_self_convention)]
     #[must_use]
     #[inline]
@@ -41,7 +41,7 @@ where
         ExprRef::is_atom(&self.cases())
     }
 
-    /// Checks if the `Reference` is a grouped expression `Group<E>::Ref`.
+    /// Checks if the [`Reference`] is a grouped expression [`Group<E>::Ref`].
     #[allow(clippy::wrong_self_convention)]
     #[must_use]
     #[inline]
@@ -52,7 +52,7 @@ where
         ExprRef::is_group(&self.cases())
     }
 
-    /// Converts from an `Reference<E>` to an `Option<&E::Atom>`.
+    /// Converts from a [`Reference<E>`](Reference) to an [`Option`]`<`[`&E::Atom`](Expression::Atom)`>`.
     #[must_use]
     #[inline]
     fn atom(self) -> Option<&'e E::Atom>
@@ -62,7 +62,7 @@ where
         ExprRef::atom(self.cases())
     }
 
-    /// Converts from an `Reference<E>` to an `Option<GroupRef<E>>`.
+    /// Converts from a [`Reference<E>`](Reference) to an [`Option`]`<`[`GroupRef<E>`]`>`.
     #[must_use]
     #[inline]
     fn group(self) -> Option<GroupRef<'e, E>>
@@ -72,11 +72,11 @@ where
         ExprRef::group(self.cases())
     }
 
-    /// Returns the contained `Atom` value, consuming the `self` value.
+    /// Returns the contained [`Atom`](Expression::Atom) value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is a `Group`.
+    /// Panics if the `self` value is a [`Group`](Expression::Group).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -88,11 +88,11 @@ where
         ExprRef::unwrap_atom(self.cases())
     }
 
-    /// Returns the contained `Group` value, consuming the `self` value.
+    /// Returns the contained [`Group`](Expression::Group) value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is an `Atom`.
+    /// Panics if the `self` value is an [`Atom`](Expression::Atom).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -104,7 +104,7 @@ where
         ExprRef::unwrap_group(self.cases())
     }
 
-    /// Returns new owned copy of the underlying expression.
+    /// Returns new owned copy of the underlying [`Expression`].
     #[allow(clippy::wrong_self_convention)]
     #[inline]
     fn to_owned(self) -> E
@@ -116,7 +116,7 @@ where
         ExprRef::to_owned(self.cases())
     }
 
-    /// Performs substitution over the expression by reference.
+    /// Performs substitution over the [`Expression`] by reference.
     #[inline]
     fn substitute_ref<F>(self, f: F) -> E
     where
@@ -147,22 +147,22 @@ where
     }
 }
 
-/// Expression Group Reference Trait
+/// [`Expression Group`](Expression::Group) Reference Trait
 pub trait GroupReference<E>
 where
     E: Expression,
 {
-    /// Element of a `GroupReference`
+    /// Element of a [`GroupReference`]
     type Item<'e>: Reference<'e, E>
     where
         E: 'e;
 
-    /// Iterator over `GroupReference::Item`
+    /// Iterator over [`GroupReference::Item`]
     type Iter<'e>: Iterator<Item = Self::Item<'e>>
     where
         E: 'e;
 
-    /// Returns group reference iterator.
+    /// Returns a group reference iterator.
     fn iter(&self) -> Self::Iter<'_>;
 
     /// Returns a size hint for the underlying iterator.
@@ -184,13 +184,13 @@ where
         matches!(self.len(), Some(0))
     }
 
-    /// Returns a reference to an element.
+    /// Returns a reference to an element at the given position.
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item<'_>> {
         self.iter().nth(index)
     }
 
-    /// Returns new owned group from `GroupReference`.
+    /// Returns new owned [`Group`](Expression::Group) from a [`GroupReference`].
     #[inline]
     fn to_owned(&self) -> E::Group
     where
@@ -200,7 +200,7 @@ where
         self.iter().map(Reference::to_owned).collect()
     }
 
-    /// Performs substitution over the expression group by reference.
+    /// Performs substitution over the underlying [`Group`](Expression::Group) by reference.
     #[inline]
     fn substitute_ref<F>(&self, mut f: F) -> E::Group
     where
@@ -253,12 +253,12 @@ where
     }
 }
 
-/// Expression Group Trait
+/// [`Expression Group`](Expression::Group) Trait
 pub trait Group<E>
 where
     E: Expression,
 {
-    /// Reference Type
+    /// [`Group`](Expression::Group) Reference Type
     type Ref<'e>: GroupReference<E>
     where
         E: 'e;
@@ -303,7 +303,7 @@ where
         self.reference().to_owned()
     }
 
-    /// Performs substitution over the expression group.
+    /// Performs substitution over the [`Group`].
     #[inline]
     fn substitute<F>(self, mut f: F) -> E::Group
     where
@@ -314,7 +314,7 @@ where
         Expr::substitute_group_inner(self.into_iter(), &mut f)
     }
 
-    /// Performs substitution over the expression group by reference.
+    /// Performs substitution over the [`Group`] by reference.
     #[inline]
     fn substitute_ref<F>(&self, f: F) -> E::Group
     where
@@ -357,13 +357,13 @@ where
     }
 }
 
-/// Expression Group Reference Alias
+/// [`Expression`] [`Group Reference`](GroupReference) Alias
 pub type GroupRef<'e, E> = <<E as Expression>::Group as Group<E>>::Ref<'e>;
 
-/// Expression Group Reference Iterator Alias
+/// [`Expression`] [`Group Reference Iterator`](GroupReference::Iter) Alias
 pub type GroupRefIter<'e, 'i, E> = <GroupRef<'e, E> as GroupReference<E>>::Iter<'i>;
 
-/// Expression Group Reference Iterator Item Alias
+/// [`Expression`] [`Group Reference`](GroupReference) [`Iterator Item`](GroupReference::Item) Alias
 pub type GroupRefItem<'e, 'i, E> = <GroupRef<'e, E> as GroupReference<E>>::Item<'i>;
 
 /// Expression Trait
@@ -374,21 +374,19 @@ where
     /// Atomic Element Type
     type Atom;
 
-    /// Group Expression Type
+    /// [`Group`] Expression Type
     type Group: Group<Self>;
 
-    /// Returns a reference to the underlying `Expression` type.
+    /// Returns a reference to the underlying [`Expression`] type.
     fn cases(&self) -> ExprRef<Self>;
 
-    /// Builds an `Expression` from an atomic element.
+    /// Builds an [`Expression`] from an atomic element.
     fn from_atom(atom: Self::Atom) -> Self;
 
-    /// Builds an `Expression` from a grouped expression.
+    /// Builds an [`Expression`] from a grouped expression.
     fn from_group(group: Self::Group) -> Self;
 
-    /// Converts from the [canonical enumeration].
-    ///
-    /// [canonical enumeration]: enum.Expr.html
+    /// Converts from the [canonical enumeration](Expr).
     #[must_use]
     #[inline]
     fn from_expr(expr: Expr<Self>) -> Self {
@@ -398,7 +396,7 @@ where
         }
     }
 
-    /// Parses a string into an `Expression`.
+    /// Parses a string into an [`Expression`].
     #[cfg(feature = "parse")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parse")))]
     #[inline]
@@ -410,53 +408,57 @@ where
         parse::from_str(s)
     }
 
-    /// Checks if the `Expression` is atomic.
+    /// Checks if the [`Expression`] is atomic.
     #[must_use]
     #[inline]
     fn is_atom(&self) -> bool {
         ExprRef::is_atom(&self.cases())
     }
 
-    /// Checks if the `Expression` is a grouped expression.
+    /// Checks if the [`Expression`] is a grouped expression.
     #[must_use]
     #[inline]
     fn is_group(&self) -> bool {
         ExprRef::is_group(&self.cases())
     }
 
-    /// Converts from an `Expression` to an `Option<E::Atom>`.
+    /// Converts from an [`Expression`] to an
+    /// [`Option`]`<`[`E::Atom`](Expression::Atom)`>`.
     #[must_use]
     #[inline]
     fn atom(self) -> Option<Self::Atom> {
         Expr::atom(self.into())
     }
 
-    /// Converts from an `&Expression` to an `Option<&E::Atom>`.
+    /// Converts from an [`&Expression`](Expression) to an
+    /// [`Option`]`<`[`&Expression::Atom`](Expression::Atom)`>`.
     #[must_use]
     #[inline]
     fn atom_ref(&self) -> Option<&Self::Atom> {
         ExprRef::atom(self.cases())
     }
 
-    /// Converts from an `Expression` to an `Option<E::Group>`.
+    /// Converts from an [`Expression`] to an
+    /// [`Option`]`<`[`Expression::Group`](Expression::Group)`>`.
     #[must_use]
     #[inline]
     fn group(self) -> Option<Self::Group> {
         Expr::group(self.into())
     }
 
-    /// Converts from an `&Expression` to an `Option<GroupRef>`.
+    /// Converts from an [`&Expression`](Expression) to an
+    /// [`Option`]`<`[`GroupRef`](GroupReference)`>`.
     #[must_use]
     #[inline]
     fn group_ref(&self) -> Option<GroupRef<Self>> {
         ExprRef::group(self.cases())
     }
 
-    /// Returns the contained `Atom` value, consuming the `self` value.
+    /// Returns the contained [`Atom`](Expression::Atom) value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is a `Group`.
+    /// Panics if the `self` value is a [`Group`](Expression::Group).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -465,11 +467,11 @@ where
         Expr::unwrap_atom(self.into())
     }
 
-    /// Returns the contained `Group` value, consuming the `self` value.
+    /// Returns the contained [`Group`](Expression::Group) value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is an `Atom`.
+    /// Panics if the `self` value is an [`Atom`](Expression::Atom).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -496,9 +498,9 @@ where
         Self::Group::empty()
     }
 
-    /// Returns the default value of an `Expression`: the empty group.
+    /// Returns the default value of an [`Expression`]: the empty group.
     #[inline]
-    fn default() -> Self
+    fn empty() -> Self
     where
         Self::Group: FromIterator<Self>,
     {
@@ -523,7 +525,7 @@ where
         Self::from_group(Self::default_group())
     }
 
-    /// Clones an `Expression` that has `Clone`-able `Atom`s.
+    /// Clones an [`Expression`] that has [`Clone`]-able [`Atoms`](Expression::Atom).
     #[inline]
     fn clone(&self) -> Self
     where
@@ -533,7 +535,8 @@ where
         ExprRef::to_owned(self.cases())
     }
 
-    /// Checks if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    /// Checks if two [`Expressions`](Expression) are equal using [`PartialEq`]
+    /// on their [`Atoms`](Expression::Atom).
     #[inline]
     fn eq<E>(&self, other: &E) -> bool
     where
@@ -543,8 +546,8 @@ where
         self.cases().eq(&other.cases())
     }
 
-    /// Checks if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
-    /// `Atom`s.
+    /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     #[inline]
     fn is_subexpression<E>(&self, other: &E) -> bool
     where
@@ -554,7 +557,7 @@ where
         self.cases().is_subexpression(&other.cases())
     }
 
-    /// Checks if expression matches given `Pattern`.
+    /// Checks if expression matches given [`Pattern`](pattern::Pattern).
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -565,7 +568,7 @@ where
         pattern.matches(self)
     }
 
-    /// Checks if `self` matches an equality pattern.
+    /// Checks if `self` matches an [equality pattern](pattern::EqualExpressionPattern).
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -577,7 +580,7 @@ where
         self.matches(pattern::EqualExpressionPattern::new(pattern))
     }
 
-    /// Checks if `self` matches a subexpression pattern.
+    /// Checks if `self` matches a [subexpression pattern](pattern::SubExpressionPattern).
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -589,7 +592,7 @@ where
         self.matches(pattern::SubExpressionPattern::new(pattern))
     }
 
-    /// Checks if `self` matches a basic shape pattern.
+    /// Checks if `self` matches a [basic shape pattern](pattern::BasicShape).
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -601,7 +604,7 @@ where
         self.matches(pattern::BasicShapePattern::new(pattern))
     }
 
-    /// Checks if `self` matches a wildcard expression.
+    /// Checks if `self` matches a [wildcard expression](pattern::WildCardPattern).
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
     #[inline]
@@ -614,7 +617,8 @@ where
         self.matches(pattern::WildCardPattern::new(is_wildcard, pattern))
     }
 
-    /// Extends a function on `Atom`s to a function on `Expression`s.
+    /// Extends a function on [`Atoms`](Expression::Atom) to a
+    /// function on [`Expressions`](Expression).
     #[inline]
     fn map<E, F>(self, f: F) -> E
     where
@@ -626,7 +630,8 @@ where
         Expr::map(self.into(), f)
     }
 
-    /// Extends a function on `&Atom`s to a function on `&Expression`s.
+    /// Extends a function on [`&Atoms`](Expression::Atom) to a
+    /// function on [`&Expressions`](Expression).
     #[inline]
     fn map_ref<E, F>(&self, f: F) -> E
     where
@@ -637,7 +642,7 @@ where
         ExprRef::map_ref(&self.cases(), f)
     }
 
-    /// Substitutes an `Expression` into each `Atom` of `self`.
+    /// Substitutes an [`Expression`] into each [`Atom`](Expression::Atom) of `self`.
     #[inline]
     fn substitute<F>(self, f: F) -> Self
     where
@@ -647,7 +652,7 @@ where
         Expr::substitute(self.into(), f)
     }
 
-    /// Substitutes an `Expression` into each `Atom` of `&self`.
+    /// Substitutes an [`Expression`] into each [`&Atom`](Expression::Atom) of `&self`.
     #[inline]
     fn substitute_ref<F>(&self, f: F) -> Self
     where
@@ -698,7 +703,7 @@ pub mod multi {
     }
 }
 
-/// Internal Reference to an `Expression` Type
+/// Internal Reference to an [`Expression`] Type
 pub enum ExprRef<'e, E>
 where
     E: 'e + Expression,
@@ -706,7 +711,7 @@ where
     /// Reference to an atomic expression
     Atom(&'e E::Atom),
 
-    /// Grouped expression reference
+    /// Reference to a grouped expression
     Group(GroupRef<'e, E>),
 }
 
@@ -714,21 +719,22 @@ impl<'e, E> ExprRef<'e, E>
 where
     E: Expression,
 {
-    /// Checks if the `ExprRef` is atomic.
+    /// Checks if the [`ExprRef`] is an atomic expression [`&Atom`](Expression::Atom).
     #[must_use]
     #[inline]
     pub fn is_atom(&self) -> bool {
         matches!(self, Self::Atom(_))
     }
 
-    /// Checks if the `ExprRef` is a grouped expression `Group<E>::Ref`.
+    /// Checks if the [`ExprRef`] is a grouped expression [`Group<E>::Ref`].
     #[must_use]
     #[inline]
     pub fn is_group(&self) -> bool {
         matches!(self, Self::Group(_))
     }
 
-    /// Converts from an `ExprRef<E>` to an `Option<&E::Atom>`.
+    /// Converts from an [`ExprRef<'e, E>`] to an
+    /// [`Option`]`<`[`&'e E::Atom`](Expression::Atom)`>`.
     #[must_use]
     #[inline]
     pub fn atom(self) -> Option<&'e E::Atom> {
@@ -738,7 +744,8 @@ where
         }
     }
 
-    /// Converts from an `&ExprRef<E>` to an `Option<&E::Atom>`.
+    /// Converts from an [`&ExprRef<'e, E>`](ExprRef) to an
+    /// [`Option`]`<`[`&'e E::Atom`](Expression::Atom)`>`.
     #[must_use]
     #[inline]
     pub fn atom_ref(&self) -> Option<&'e E::Atom> {
@@ -748,7 +755,8 @@ where
         }
     }
 
-    /// Converts from an `ExprRef<E>` to an `Option<GroupRef<E>>`.
+    /// Converts from an [`ExprRef<'e, E>`] to an
+    /// [`Option`]`<`[`GroupRef<'e, E>`]`>`.
     #[must_use]
     #[inline]
     pub fn group(self) -> Option<GroupRef<'e, E>> {
@@ -758,7 +766,8 @@ where
         }
     }
 
-    /// Converts from an `&ExprRef<E>` to an `Option<&GroupRef<E>>`.
+    /// Converts from an [`&ExprRef<'e, E>`] to an
+    /// [`Option`]`<`[`&GroupRef<'e, E>`]>`.
     #[must_use]
     #[inline]
     pub fn group_ref(&self) -> Option<&GroupRef<'e, E>> {
@@ -768,11 +777,11 @@ where
         }
     }
 
-    /// Returns the contained `Atom` value, consuming the `self` value.
+    /// Returns the contained [`&'e Atom`](Expression::Atom) value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is a `Group`.
+    /// Panics if the `self` value is a [`Group`](Expression::Group).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -781,11 +790,11 @@ where
         self.atom().unwrap()
     }
 
-    /// Returns the contained `Group` value, consuming the `self` value.
+    /// Returns the contained [`GroupRef<'e, E>`] value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is an `Atom`.
+    /// Panics if the `self` value is an [`Atom`](Expression::Atom).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -794,8 +803,8 @@ where
         self.group().unwrap()
     }
 
-    /// Checks if an `Expression` is a sub-tree of another `Expression` using `PartialEq` on their
-    /// `Atom`s.
+    /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     pub fn is_subexpression<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
     where
         R: Expression,
@@ -829,7 +838,8 @@ where
         E::from_expr(self.into())
     }
 
-    /// Extends a function on `&Atom`s to a function on `&Expression`s.
+    /// Extends a function on [`&Atoms`](Expression::Atom) to a
+    /// function on [`&Expressions`](Expression).
     #[inline]
     pub fn map_ref<O, F>(&self, mut f: F) -> O
     where
@@ -858,7 +868,7 @@ where
         }
     }
 
-    /// Substitutes an `Expression` into each `Atom` of `&self`.
+    /// Substitutes an [`Expression`] into each [`&Atom`](Expression::Atom) of `&self`.
     #[inline]
     pub fn substitute_ref<F>(&self, mut f: F) -> E
     where
@@ -895,7 +905,7 @@ where
         }
     }
 
-    /// Checks if two groups are equal.
+    /// Checks if two [`Group`](Expression::Group) are equal pointwise.
     #[inline]
     pub fn eq_groups<'r, R>(lhs: &GroupRef<'e, E>, rhs: &GroupRef<'r, R>) -> bool
     where
@@ -933,7 +943,8 @@ where
     R: Expression,
     L::Atom: PartialEq<R::Atom>,
 {
-    /// Checks if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    /// Checks if two [`Expressions`](Expression) are equal using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     fn eq(&self, other: &ExprRef<'r, R>) -> bool {
         match (self, other) {
             (Self::Atom(lhs), ExprRef::Atom(rhs)) => *lhs == *rhs,
@@ -967,7 +978,7 @@ where
     }
 }
 
-/// Canonical Concrete `Expression` Type
+/// Canonical Concrete [`Expression`] Type
 #[derive(Debug)]
 pub enum Expr<E>
 where
@@ -984,21 +995,21 @@ impl<E> Expr<E>
 where
     E: Expression,
 {
-    /// Checks if the `Expr` is atomic.
+    /// Checks if the [`Expr`] is an atomic expression.
     #[must_use]
     #[inline]
     pub fn is_atom(&self) -> bool {
         matches!(self, Expr::Atom(_))
     }
 
-    /// Checks if the `Expr` is a grouped expression.
+    /// Checks if the [`Expr`] is a grouped expression.
     #[must_use]
     #[inline]
     pub fn is_group(&self) -> bool {
         matches!(self, Expr::Group(_))
     }
 
-    /// Converts from an `Expr<E>` to an `Option<E::Atom>`.
+    /// Converts from an [`Expr<E>`] to an [`Option`]`<`[`E::Atom`](Expression::Atom)`>`.
     #[must_use]
     #[inline]
     pub fn atom(self) -> Option<E::Atom> {
@@ -1008,7 +1019,7 @@ where
         }
     }
 
-    /// Converts from an `&Expr<E>` to an `Option<&E::Atom>`.
+    /// Converts from an [`&Expr<E>`](Expr) to an [`Option`]`<`[`&E::Atom`](Expression::Atom)`>`.
     #[must_use]
     #[inline]
     pub fn atom_ref(&self) -> Option<&E::Atom> {
@@ -1018,7 +1029,7 @@ where
         }
     }
 
-    /// Converts from an `Expr<E>` to an `Option<E::Group>`.
+    /// Converts from an [`Expr<E>`] to an [`Option`]`<`[`E::Group`](Expression::Group)`>`.
     #[must_use]
     #[inline]
     pub fn group(self) -> Option<E::Group> {
@@ -1028,7 +1039,7 @@ where
         }
     }
 
-    /// Converts from an `&Expr<E>` to an `Option<&E::Group>`.
+    /// Converts from an [`&Expr<E>`](Expr) to an [`Option`]`<`[`&E::Group`](Expression::Group)`>`.
     #[must_use]
     #[inline]
     pub fn group_ref(&self) -> Option<&E::Group> {
@@ -1038,11 +1049,11 @@ where
         }
     }
 
-    /// Returns the contained `Atom` value, consuming the `self` value.
+    /// Returns the contained [`Atom`](Expression::Atom) value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is a `Group`.
+    /// Panics if the `self` value is a [`Group`](Expression::Group).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -1051,11 +1062,11 @@ where
         self.atom().unwrap()
     }
 
-    /// Returns the contained `Group` value, consuming the `self` value.
+    /// Returns the contained [`Group`](Expression::Group) value, consuming the `self` value.
     ///
     /// # Panics
     ///
-    /// Panics if the `self` value is an `Atom`.
+    /// Panics if the `self` value is an [`Atom`](Expression::Atom).
     #[cfg(not(feature = "no-panic"))]
     #[cfg_attr(docsrs, doc(cfg(not(feature = "no-panic"))))]
     #[inline]
@@ -1064,7 +1075,8 @@ where
         self.group().unwrap()
     }
 
-    /// Extends a function on `Atom`s to a function on `Expression`s.
+    /// Extends a function on [`Atoms`](Expression::Atom) to a
+    /// function on [`Expressions`](Expression).
     #[inline]
     pub fn map<O, F>(self, mut f: F) -> O
     where
@@ -1094,7 +1106,7 @@ where
         }
     }
 
-    /// Substitutes an `Expression` into each `Atom` of `self`.
+    /// Substitutes an [`Expression`] into each [`Atom`](Expression::Atom) of `self`.
     #[inline]
     pub fn substitute<F>(self, mut f: F) -> E
     where
@@ -1114,6 +1126,7 @@ where
         iter.map(move |e| e.into().substitute_inner(f)).collect()
     }
 
+    #[inline]
     fn substitute_inner<F>(self, f: &mut F) -> E
     where
         E::Group: FromIterator<E> + IntoIterator<Item = E>,
@@ -1149,7 +1162,7 @@ where
     /// Returns the empty group expression.
     #[inline]
     fn default() -> Self {
-        E::default().into()
+        E::empty().into()
     }
 }
 
@@ -1159,7 +1172,8 @@ where
     R: Expression,
     L::Atom: PartialEq<R::Atom>,
 {
-    /// Checks if two `Expression`s are equal using `PartialEq` on their `Atom`s.
+    /// Checks if two [`Expressions`](Expression) are equal using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     #[inline]
     fn eq(&self, other: &Expr<R>) -> bool {
         ExprRef::from(self).eq(&ExprRef::from(other))
@@ -1828,19 +1842,19 @@ pub mod shape {
         E: Expression,
         Self: Into<Expr<E>> + TryFrom<Expr<E>, Error = <Self as Matcher<E>>::Error>,
     {
-        /// Parses an `Expression::Atom` into `Self`.
+        /// Parses an [`Atom`](Expression::Atom) into [`Self`].
         #[inline]
         fn parse_atom(atom: E::Atom) -> Result<Self, <Self as Matcher<E>>::Error> {
             Expr::Atom(atom).try_into()
         }
 
-        /// Parses an `Expression::Group` into `Self`.
+        /// Parses a [`Group`](Expression::Group) into [`Self`].
         #[inline]
         fn parse_group(group: E::Group) -> Result<Self, <Self as Matcher<E>>::Error> {
             Expr::Group(group).try_into()
         }
 
-        /// Parses an `Expression` into `Self`.
+        /// Parses an [`Expression`] into [`Self`].
         #[inline]
         fn parse_expr(expr: E) -> Result<Self, <Self as Matcher<E>>::Error> {
             expr.into().try_into()
@@ -1898,7 +1912,7 @@ pub mod pattern {
         }
     }
 
-    /// Equal Expression Pattern
+    /// Equal [`Expression`] Pattern
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct EqualExpressionPattern<'p, P>(&'p P)
     where
@@ -1908,6 +1922,7 @@ pub mod pattern {
     where
         P: Expression,
     {
+        #[inline]
         pub(crate) fn new(pattern: &'p P) -> Self {
             Self(pattern)
         }
@@ -1919,10 +1934,12 @@ pub mod pattern {
         P: Expression,
         P::Atom: PartialEq<E::Atom>,
     {
+        #[inline]
         fn matches_atom(&self, atom: &E::Atom) -> bool {
             self.0.atom().map_or(false, |a| a == atom)
         }
 
+        #[inline]
         fn matches_group(&self, group: GroupRef<E>) -> bool {
             self.0
                 .group()
@@ -1940,17 +1957,19 @@ pub mod pattern {
     where
         P: 'p + Expression,
     {
+        #[inline]
         pub(crate) fn new(pattern: &'p P) -> Self {
             Self(pattern)
         }
 
+        #[inline]
         fn matches_atom<E>(pattern: &ExprRef<'_, P>, atom: &E::Atom) -> bool
         where
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern {
-                ExprRef::Atom(pattern_atom) => *pattern_atom == atom,
+            match pattern.atom_ref() {
+                Some(pattern_atom) => pattern_atom == atom,
                 _ => false,
             }
         }
@@ -1960,8 +1979,8 @@ pub mod pattern {
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern {
-                ExprRef::Group(pattern_group) => {
+            match pattern.group_ref() {
+                Some(pattern_group) => {
                     group
                         .iter()
                         .any(move |e| Self::matches(&pattern, e.cases()))
@@ -2020,18 +2039,20 @@ pub mod pattern {
         P: 'p + Expression,
         W: FnMut(&P::Atom) -> bool,
     {
+        #[inline]
         pub(crate) fn new(is_wildcard: W, pattern: &'p P) -> Self {
             Self(is_wildcard, pattern)
         }
 
+        #[inline]
         fn matches_atom<F, E>(is_wildcard: F, pattern: &ExprRef<'_, P>, atom: &E::Atom) -> bool
         where
             F: FnOnce(&P::Atom) -> bool,
             E: Expression,
             P::Atom: PartialEq<E::Atom>,
         {
-            match pattern {
-                ExprRef::Atom(pattern_atom) => is_wildcard(pattern_atom) || *pattern_atom == atom,
+            match pattern.atom_ref() {
+                Some(pattern_atom) => is_wildcard(pattern_atom) || pattern_atom == atom,
                 _ => false,
             }
         }
@@ -2166,13 +2187,13 @@ pub mod pattern {
         /// Checks if the shape would match an atom.
         #[inline]
         pub fn matches_atom(&self) -> bool {
-            *self == Self::Expr || *self == Self::Atom
+            matches!(self, Self::Expr | Self::Atom)
         }
 
         /// Checks if the shape would match a group.
         #[inline]
         pub fn matches_group(&self) -> bool {
-            *self == Self::Expr || *self == Self::Group
+            matches!(self, Self::Expr | Self::Group)
         }
     }
 
@@ -2186,10 +2207,12 @@ pub mod pattern {
     where
         P: 'p + Expression<Atom = BasicShape>,
     {
+        #[inline]
         pub(crate) fn new(pattern: &'p P) -> Self {
             Self(pattern)
         }
 
+        #[inline]
         fn matches_atom<E>(pattern: ExprRef<'_, P>, atom: &E::Atom) -> bool
         where
             E: Expression,
@@ -2246,7 +2269,7 @@ pub mod pattern {
     }
 }
 
-/// Vector Expressions
+/// Vector [`Expressions`](Expression)
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub mod vec {
@@ -2255,10 +2278,10 @@ pub mod vec {
         alloc::{string::String, vec::Vec},
     };
 
-    /// Vector Expression Type over `String`s
+    /// Vector [`Expression`] Type over [`Strings`](String)
     pub type StringExpr = Expr<String>;
 
-    /// Vector Expression Type
+    /// Vector [`Expression`] Type
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     pub enum Expr<A = ()> {
         /// Atomic expression
@@ -2305,7 +2328,7 @@ pub mod vec {
     impl<A> Default for Expr<A> {
         #[inline]
         fn default() -> Self {
-            <Self as Expression>::default()
+            Self::empty()
         }
     }
 
@@ -2329,10 +2352,10 @@ pub mod vec {
     pub mod multi {
         use super::*;
 
-        /// Vector `MultiExpression` over `String`s
+        /// Vector [`MultiExpression`](crate::multi::MultiExpression) over [`Strings`](String)
         pub type StringMultiExpr<G = ()> = MultiExpr<String, G>;
 
-        /// Vector `MultiExpression` Type
+        /// Vector [`MultiExpression`](crate::multi::MultiExpression) Type
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         pub enum MultiExpr<A = (), G = ()> {
             /// Atomic Expression
@@ -2394,7 +2417,7 @@ pub mod vec {
         {
             #[inline]
             fn default() -> Self {
-                <Self as Expression>::default()
+                Self::empty()
             }
         }
 
@@ -2429,13 +2452,13 @@ pub mod vec {
     }
 }
 
-/// Buffered Expressions
+/// Buffered [`Expressions`](Expression)
 #[cfg(feature = "buffered")]
 #[cfg_attr(docsrs, doc(cfg(feature = "buffered")))]
 pub mod buffered {
     use {super::*, alloc::vec::Vec};
 
-    /// Buffered Expression Type
+    /// Buffered [`Expression`] Type
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct Expr<T, LengthIndex = usize, ShapeIndex = usize> {
         atoms: Vec<T>,
