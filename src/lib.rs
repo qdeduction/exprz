@@ -20,7 +20,9 @@ use alloc::vec::Vec;
 use core::str::FromStr;
 
 #[cfg(feature = "rayon")]
-use rayon::iter::{FromParallelIterator, IndexedParallelIterator, ParallelIterator};
+use rayon::iter::{
+    FromParallelIterator, IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 /// Package Version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -230,7 +232,7 @@ where
 
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
-        (self[..]).iter()
+        self[..].iter()
     }
 }
 
@@ -252,7 +254,7 @@ where
 
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
-        (self[..]).iter()
+        self[..].iter()
     }
 }
 
@@ -272,6 +274,40 @@ where
     fn par_iter(&self) -> Self::ParIter<'_>;
 }
 
+#[cfg(feature = "rayon")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+impl<E> ParallelGroupReference<E> for &[E]
+where
+    E: Expression + Sync,
+{
+    type ParIter<'e>
+    where
+        E: 'e,
+    = rayon::slice::Iter<'e, E>;
+
+    #[inline]
+    fn par_iter(&self) -> Self::ParIter<'_> {
+        self[..].par_iter()
+    }
+}
+
+#[cfg(all(feature = "alloc", feature = "rayon"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "alloc", feature = "rayon"))))]
+impl<E> ParallelGroupReference<E> for &Vec<E>
+where
+    E: Expression + Sync,
+{
+    type ParIter<'e>
+    where
+        E: 'e,
+    = rayon::slice::Iter<'e, E>;
+
+    #[inline]
+    fn par_iter(&self) -> Self::ParIter<'_> {
+        self[..].par_iter()
+    }
+}
+
 /// Indexed Parallel [`Expression Group`](Expression::Group) Reference Trait
 #[cfg(feature = "rayon")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
@@ -288,7 +324,41 @@ where
     fn indexed_par_iter(&self) -> Self::IndexedParIter<'_>;
 }
 
-/* TODO:
+#[cfg(feature = "rayon")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+impl<E> IndexedParallelGroupReference<E> for &[E]
+where
+    E: Expression + Sync,
+{
+    type IndexedParIter<'e>
+    where
+        E: 'e,
+    = rayon::slice::Iter<'e, E>;
+
+    #[inline]
+    fn indexed_par_iter(&self) -> Self::IndexedParIter<'_> {
+        self.par_iter()
+    }
+}
+
+#[cfg(all(feature = "alloc", feature = "rayon"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "alloc", feature = "rayon"))))]
+impl<E> IndexedParallelGroupReference<E> for &Vec<E>
+where
+    E: Expression + Sync,
+{
+    type IndexedParIter<'e>
+    where
+        E: 'e,
+    = rayon::slice::Iter<'e, E>;
+
+    #[inline]
+    fn indexed_par_iter(&self) -> Self::IndexedParIter<'_> {
+        self.par_iter()
+    }
+}
+
+/* FIXME:
 #[cfg(feature = "rayon")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
 impl<E, I> ParallelGroupReference<E> for I
