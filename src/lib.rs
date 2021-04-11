@@ -697,6 +697,21 @@ where
         self.cases().is_subexpression(&other.cases())
     }
 
+    /// Checks, in parallel, if an [`Expression`] is a sub-tree of another [`Expression`] using
+    /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    #[inline]
+    fn parallel_is_subexpression<E>(&self, other: &E) -> bool
+    where
+        for<'g> GroupRef<'g, Self>: Sync + IndexedParallelGroupReference<Self>,
+        E: Expression,
+        for<'g> GroupRef<'g, E>: IndexedParallelGroupReference<E>,
+        Self::Atom: Sync + PartialEq<E::Atom>,
+    {
+        self.cases().parallel_is_subexpression(&other.cases())
+    }
+
     /// Checks if expression matches given [`Pattern`](pattern::Pattern).
     #[cfg(feature = "pattern")]
     #[cfg_attr(docsrs, doc(cfg(feature = "pattern")))]
