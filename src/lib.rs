@@ -601,6 +601,21 @@ where
         self.cases().eq(&other.cases())
     }
 
+    /// Checks, in parallel, if two [`Expressions`](Expression) are equal using [`PartialEq`]
+    /// on their [`Atoms`](Expression::Atom).
+    #[cfg(feature = "rayon")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
+    #[inline]
+    fn parallel_eq<E>(&self, other: &E) -> bool
+    where
+        for<'g> GroupRef<'g, Self>: IndexedParallelGroupReference<Self>,
+        E: Expression,
+        for<'g> GroupRef<'g, E>: IndexedParallelGroupReference<E>,
+        Self::Atom: PartialEq<E::Atom>,
+    {
+        self.cases().parallel_eq(&other.cases())
+    }
+
     /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
     /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     #[inline]
@@ -950,7 +965,7 @@ where
         }
     }
 
-    /// Substitutes an [`Expression`] into each [`&Atom`](Expression::Atom) of `&self`.
+    /// Substitutes, in parallel, an [`Expression`] into each [`&Atom`](Expression::Atom) of `&self`.
     #[cfg(feature = "rayon")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
     #[inline]
@@ -1023,7 +1038,7 @@ where
         }
     }
 
-    /// Checks in parallel if an [`Expression`] is a sub-tree of another [`Expression`] using
+    /// Checks, in parallel, if an [`Expression`] is a sub-tree of another [`Expression`] using
     /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     #[cfg(feature = "rayon")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
@@ -1064,7 +1079,7 @@ where
         util::eq_by(lhs.iter(), rhs.iter(), move |l, r| l.cases().eq(&r.cases()))
     }
 
-    /// Checks in parallel if two [`Expressions`](Expression) are equal using
+    /// Checks, in parallel, if two [`Expressions`](Expression) are equal using
     /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     #[cfg(feature = "rayon")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
@@ -1083,7 +1098,7 @@ where
         }
     }
 
-    /// Checks in parallel if two [`Groups`](Expression::Group) are equal pointwise.
+    /// Checks, in parallel, if two [`Groups`](Expression::Group) are equal pointwise.
     #[cfg(feature = "rayon")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rayon")))]
     pub fn parallel_eq_groups<'r, R>(lhs: &GroupRef<'e, E>, rhs: &GroupRef<'r, R>) -> bool
