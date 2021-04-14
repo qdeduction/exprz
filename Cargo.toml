@@ -27,10 +27,14 @@ maintenance = { status = "actively-developed" }
 default = []
 
 # Adds allocation
-alloc = []
+alloc = [
+    "serde/alloc",
+]
 
 # [EXPERIMENTAL] Adds buffered expression
-buffered = ["alloc"]
+buffered = [
+    "alloc"
+]
 
 # [EXPERIMENTAL] Adds graph algorithms
 graph = []
@@ -38,8 +42,8 @@ graph = []
 # [EXPERIMENTAL] Adds multi-expressions
 multi = []
 
-# [EXPERIMENTAL] Removes all panics
-no-panic = []
+# [EXPERIMENTAL] Adds functions which can panic
+panic = []
 
 # [EXPERIMENTAL] Adds parsing support
 parse = []
@@ -50,12 +54,18 @@ pattern = []
 # [EXPERIMENTAL] Adds shape trait
 shape = []
 
+# [EXPERIMENTAL] Adds unicode support
+unicode = [
+    "unicode-segmentation",
+]
+
 # [EXPERIMENTAL] Adds traversal algorithms
 visit = []
 
 # Enables all stable features
 stable = [
     "alloc",
+    "panic",
 ]
 
 # Enables all experimental features
@@ -63,13 +73,13 @@ experimental = [
     "buffered",
     "graph",
     "multi",
-    "no-panic",
     "parse",
     "pattern",
     "petgraph",
     "rayon",
     "serde",
     "shape",
+    "unicode",
     "visit",
 ]
 
@@ -82,4 +92,6 @@ all = [
 [dependencies]
 petgraph = { version = "0.5.1", optional = true }
 rayon = { version = "1.5.0", optional = true }
-serde = { version = "1.0.125", optional = true }
+serde = { version = "1.0.125", default-features = false, features = ["derive"], optional = true }
+unicode-segmentation = { version = "1.7.1", optional = true }
+
