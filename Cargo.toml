@@ -31,6 +31,9 @@ alloc = [
     "serde/alloc",
 ]
 
+# [EXPERIMENTAL] Adds standard library features
+std = []
+
 # [EXPERIMENTAL] Adds buffered expression
 buffered = [
     "alloc"
@@ -42,7 +45,7 @@ graph = []
 # [EXPERIMENTAL] Adds multi-expressions
 multi = []
 
-# [EXPERIMENTAL] Adds functions which can panic
+# Adds functions which can panic
 panic = []
 
 # [EXPERIMENTAL] Adds parsing support
@@ -79,6 +82,7 @@ experimental = [
     "rayon",
     "serde",
     "shape",
+    "std",
     "unicode",
     "visit",
 ]

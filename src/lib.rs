@@ -7,6 +7,8 @@
 #![no_std]
 
 // TODO: implement `Deref/Borrow/ToOwned` traits where possible
+// TODO: implement `std::error::Error` for errors if `std` is enabled
+// TODO: add derive macros for `E: Expression` to get `Clone`, `PartialEq`, ... etc. for free
 
 use core::{iter::FromIterator, slice};
 
@@ -25,7 +27,7 @@ use rayon::iter::{
 };
 
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Package Version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -534,6 +536,31 @@ where
         Self::Group: FromIterator<Self>,
     {
         parse::from_str(s)
+    }
+
+    /// Deserializes into an [`Expression`].
+    #[cfg(feature = "serde")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+    #[inline]
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+        Self::Atom: Deserialize<'de>,
+        Self::Group: FromIterator<Self>,
+    {
+        de::deserialize(deserializer)
+    }
+
+    /// Serializes an [`Expression`].
+    #[cfg(feature = "serde")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        Self::Atom: Serialize,
+    {
+        self.cases().serialize(serializer)
     }
 
     /// Checks if the [`Expression`] is atomic.
@@ -1265,8 +1292,31 @@ where
     }
 }
 
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+impl<'e, E> Serialize for ExprRef<'e, E>
+where
+    E: Expression,
+    E::Atom: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match &self {
+            Self::Atom(atom) => atom.serialize(serializer),
+            Self::Group(group) => {
+                let mut seq = serializer.serialize_seq(group.len())?;
+                for expr in group.iter() {
+                    seq.serialize_element(&expr.cases())?;
+                }
+                seq.end()
+            }
+        }
+    }
+}
+
 /// Canonical Concrete [`Expression`] Type
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub enum Expr<E>
 where
@@ -1504,6 +1554,39 @@ where
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         E::from_str(s).map(E::into)
+    }
+}
+
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+impl<E> Serialize for Expr<E>
+where
+    E: Expression,
+    E::Atom: Serialize,
+{
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ExprRef::from(self).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+impl<'de, E> Deserialize<'de> for Expr<E>
+where
+    E: Expression,
+    E::Atom: Deserialize<'de>,
+    E::Group: FromIterator<E>,
+{
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        E::deserialize(deserializer).map(E::into)
     }
 }
 
@@ -2273,6 +2356,93 @@ pub mod parse {
     }
 }
 
+/// Serde Deserialization Module
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+pub mod de {
+    use {
+        super::*,
+        core::{
+            cmp::Ordering,
+            fmt,
+            hash::{Hash, Hasher},
+            marker::PhantomData,
+        },
+    };
+
+    /// Expression Visitor
+    #[derive(Debug)]
+    pub struct Visitor<E>(PhantomData<E>);
+
+    impl<E> Clone for Visitor<E> {
+        #[inline]
+        fn clone(&self) -> Self {
+            Self(self.0)
+        }
+    }
+
+    impl<E> Copy for Visitor<E> {}
+
+    impl<E> Default for Visitor<E> {
+        #[inline]
+        fn default() -> Self {
+            Self(Default::default())
+        }
+    }
+
+    impl<E> Eq for Visitor<E> {}
+
+    impl<E> Hash for Visitor<E> {
+        #[inline]
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.0.hash(state)
+        }
+    }
+
+    impl<E> Ord for Visitor<E> {
+        #[inline]
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.0.cmp(&other.0)
+        }
+    }
+
+    impl<E> PartialEq for Visitor<E> {
+        #[inline]
+        fn eq(&self, other: &Self) -> bool {
+            self.0.eq(&other.0)
+        }
+    }
+
+    impl<E> PartialOrd for Visitor<E> {
+        #[inline]
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            self.0.partial_cmp(&other.0)
+        }
+    }
+
+    impl<'de, E> serde::de::Visitor<'de> for Visitor<E> {
+        type Value = E;
+
+        #[inline]
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            write!(formatter, "an expression")
+        }
+    }
+
+    /// Deserializes into an [`Expression`].
+    pub fn deserialize<'de, D, E>(deserializer: D) -> Result<E, D::Error>
+    where
+        D: Deserializer<'de>,
+        E: Expression,
+        E::Atom: Deserialize<'de>,
+        E::Group: FromIterator<E>,
+    {
+        // FIXME: implement
+        let _ = deserializer;
+        todo!()
+    }
+}
+
 /// Shape Module
 #[cfg(feature = "shape")]
 #[cfg_attr(docsrs, doc(cfg(feature = "shape")))]
@@ -2781,8 +2951,7 @@ pub mod vec {
     pub type StringExpr = Expr<String>;
 
     /// Vector [`Expression`] Type
-    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    #[derive(Debug, Hash)]
     pub enum Expr<A = ()> {
         /// Atomic expression
         Atom(A),
@@ -2825,10 +2994,32 @@ pub mod vec {
         }
     }
 
+    impl<A> Clone for Expr<A>
+    where
+        A: Clone,
+    {
+        #[inline]
+        fn clone(&self) -> Self {
+            Expression::clone(self)
+        }
+    }
+
     impl<A> Default for Expr<A> {
         #[inline]
         fn default() -> Self {
-            Self::empty()
+            Expression::empty()
+        }
+    }
+
+    impl<A> Eq for Expr<A> where A: Eq {}
+
+    impl<A, Rhs> PartialEq<Expr<Rhs>> for Expr<A>
+    where
+        A: PartialEq<Rhs>,
+    {
+        #[inline]
+        fn eq(&self, other: &Expr<Rhs>) -> bool {
+            Expression::eq(self, other)
         }
     }
 
@@ -2846,11 +3037,43 @@ pub mod vec {
         }
     }
 
+    #[cfg(feature = "serde")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+    impl<A> Serialize for Expr<A>
+    where
+        A: Serialize,
+    {
+        #[inline]
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Expression::serialize(self, serializer)
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+    impl<'de, A> Deserialize<'de> for Expr<A>
+    where
+        A: Deserialize<'de>,
+    {
+        #[inline]
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Expression::deserialize(deserializer)
+        }
+    }
+
     /// Vec Multi-Expressions
     #[cfg(feature = "multi")]
     #[cfg_attr(docsrs, doc(cfg(feature = "multi")))]
     pub mod multi {
         use super::*;
+
+        // TODO: implement all the derive traits on `MultiExpr` correctly, like `vec::Expr`
 
         /// Vector [`MultiExpression`](crate::multi::MultiExpression) over [`Strings`](String)
         pub type StringMultiExpr<G = ()> = MultiExpr<String, G>;
