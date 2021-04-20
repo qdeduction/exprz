@@ -553,7 +553,8 @@ where
     fn deserialize<'de, D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
-        Self::Atom: Deserialize<'de>,
+        Self: 'de,
+        Self::Atom: FromIterator<char>,
         Self::Group: FromIterator<Self>,
     {
         de::deserialize(deserializer)
@@ -1601,8 +1602,8 @@ where
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl<'de, E> Deserialize<'de> for Expr<E>
 where
-    E: Expression,
-    E::Atom: Deserialize<'de>,
+    E: 'de + Expression,
+    E::Atom: FromIterator<char>,
     E::Group: FromIterator<E>,
 {
     #[inline]
@@ -2448,6 +2449,7 @@ pub mod de {
             hash::{Hash, Hasher},
             marker::PhantomData,
         },
+        parse::{FromCharacters, Parser},
         serde::de::{self, SeqAccess},
     };
 
@@ -2558,28 +2560,39 @@ pub mod de {
 
     impl<'de, E> de::Visitor<'de> for Visitor<E>
     where
-        E: Expression,
-        E::Atom: Deserialize<'de>,
+        E: 'de + Expression,
+        E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
-        type Value = E;
+        type Value = Expr<E>;
 
         #[inline]
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             write!(formatter, "an expression")
         }
 
+        fn visit_str<Err>(self, value: &str) -> Result<Self::Value, Err>
+        where
+            Err: de::Error,
+        {
+            Parser::<_, E>::parse_atom(&mut FromCharacters::default(), value.chars())
+                .map(Expr::Atom)
+                .map_err(move |err| {
+                    Err::custom(format_args!(
+                        "Unable to parse atom. Failed with error: {:?}",
+                        err
+                    ))
+                })
+        }
+
         fn visit_seq<S>(self, seq: S) -> Result<Self::Value, S::Error>
         where
             S: SeqAccess<'de>,
         {
-            let _ = seq;
-            /* TODO: how to make this work
             SeqAccessIterator::new(seq)
+                .map(move |e| e.map(E::from_expr))
                 .collect::<Result<E::Group, _>>()
-                .map(E::from_group)
-            */
-            todo!()
+                .map(Expr::Group)
         }
     }
 
@@ -2588,11 +2601,13 @@ pub mod de {
     pub fn deserialize<'de, D, E>(deserializer: D) -> Result<E, D::Error>
     where
         D: Deserializer<'de>,
-        E: Expression,
-        E::Atom: Deserialize<'de>,
+        E: 'de + Expression,
+        E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
-        deserializer.deserialize_any(Visitor::default())
+        deserializer
+            .deserialize_any(Visitor::default())
+            .map(E::from_expr)
     }
 }
 
@@ -3209,7 +3224,7 @@ pub mod vec {
     #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
     impl<'de, A> Deserialize<'de> for Expr<A>
     where
-        A: Deserialize<'de>,
+        A: 'de + FromIterator<char>,
     {
         #[inline]
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
