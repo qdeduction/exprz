@@ -1,14 +1,15 @@
 //! An Expression Library
 
+// TODO: implement `Deref/Borrow/ToOwned` traits where possible
+// TODO: implement `std::error::Error` for errors if `std` is enabled
+// TODO: add derive macros for `E: Expression` to get `Clone`, `PartialEq`, ... etc. for free
+// TODO: make sure that all the Expr/ExprRef methods inherit from their parameterized types
+
 #![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
 #![feature(generic_associated_types)]
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
 #![no_std]
-
-// TODO: implement `Deref/Borrow/ToOwned` traits where possible
-// TODO: implement `std::error::Error` for errors if `std` is enabled
-// TODO: add derive macros for `E: Expression` to get `Clone`, `PartialEq`, ... etc. for free
 
 use core::{iter::FromIterator, slice};
 
@@ -27,7 +28,7 @@ use rayon::iter::{
 };
 
 #[cfg(feature = "serde")]
-use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Package Version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -39,6 +40,13 @@ where
 {
     /// Returns the inner expression reference.
     fn cases(self) -> ExprRef<'e, E>;
+
+    /// Returns the kind of an expression.
+    #[must_use]
+    #[inline]
+    fn kind(self) -> ExprKind {
+        ExprRef::kind(&self.cases())
+    }
 
     /// Checks if the [`Reference`] is an atomic expression [`&E::Atom`](Expression::Atom).
     #[allow(clippy::wrong_self_convention)]
@@ -560,7 +568,14 @@ where
         S: Serializer,
         Self::Atom: Serialize,
     {
-        self.cases().serialize(serializer)
+        ExprRef::serialize(&self.cases(), serializer)
+    }
+
+    /// Returns the kind of an expression.
+    #[must_use]
+    #[inline]
+    fn kind(&self) -> ExprKind {
+        ExprRef::kind(&self.cases())
     }
 
     /// Checks if the [`Expression`] is atomic.
@@ -918,6 +933,13 @@ impl<'e, E> ExprRef<'e, E>
 where
     E: Expression,
 {
+    /// Returns the kind of an expression.
+    #[must_use]
+    #[inline]
+    pub fn kind(&self) -> ExprKind {
+        self.into()
+    }
+
     /// Checks if the [`ExprRef`] is an atomic expression [`&Atom`](Expression::Atom).
     #[must_use]
     #[inline]
@@ -1299,19 +1321,14 @@ where
     E: Expression,
     E::Atom: Serialize,
 {
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match &self {
             Self::Atom(atom) => atom.serialize(serializer),
-            Self::Group(group) => {
-                let mut seq = serializer.serialize_seq(group.len())?;
-                for expr in group.iter() {
-                    seq.serialize_element(&expr.cases())?;
-                }
-                seq.end()
-            }
+            Self::Group(group) => serializer.collect_seq(group.iter().map(move |e| e.cases())),
         }
     }
 }
@@ -1333,6 +1350,13 @@ impl<E> Expr<E>
 where
     E: Expression,
 {
+    /// Returns the kind of an expression.
+    #[must_use]
+    #[inline]
+    pub fn kind(&self) -> ExprKind {
+        self.into()
+    }
+
     /// Checks if the [`Expr`] is an atomic expression.
     #[must_use]
     #[inline]
@@ -1587,6 +1611,62 @@ where
         D: Deserializer<'de>,
     {
         E::deserialize(deserializer).map(E::into)
+    }
+}
+
+/// [`Expression`] Kinds
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ExprKind {
+    /// Atomic expression kind
+    Atom,
+
+    /// Grouped expression kind
+    Group,
+}
+
+impl<'e, 'r, E> From<&'r ExprRef<'e, E>> for ExprKind
+where
+    E: Expression,
+{
+    #[inline]
+    fn from(expr: &'r ExprRef<'e, E>) -> Self {
+        match expr {
+            ExprRef::Atom(_) => Self::Atom,
+            ExprRef::Group(_) => Self::Group,
+        }
+    }
+}
+
+impl<'e, E> From<ExprRef<'e, E>> for ExprKind
+where
+    E: Expression,
+{
+    #[inline]
+    fn from(expr: ExprRef<'e, E>) -> Self {
+        Self::from(&expr)
+    }
+}
+
+impl<'r, E> From<&'r Expr<E>> for ExprKind
+where
+    E: Expression,
+{
+    #[inline]
+    fn from(expr: &'r Expr<E>) -> Self {
+        match expr {
+            Expr::Atom(_) => Self::Atom,
+            Expr::Group(_) => Self::Group,
+        }
+    }
+}
+
+impl<E> From<Expr<E>> for ExprKind
+where
+    E: Expression,
+{
+    #[inline]
+    fn from(expr: Expr<E>) -> Self {
+        Self::from(&expr)
     }
 }
 
@@ -2368,68 +2448,143 @@ pub mod de {
             hash::{Hash, Hasher},
             marker::PhantomData,
         },
+        serde::de::{self, SeqAccess},
     };
+
+    /// Sequence Access Iterator
+    #[derive(Debug)]
+    pub struct SeqAccessIterator<'de, S, T>(S, PhantomData<&'de T>)
+    where
+        S: SeqAccess<'de>,
+        T: Deserialize<'de>;
+
+    impl<'de, S, T> SeqAccessIterator<'de, S, T>
+    where
+        S: SeqAccess<'de>,
+        T: Deserialize<'de>,
+    {
+        /// Builds a new iterator over a [`SeqAccess`] object.
+        #[inline]
+        pub fn new(seq: S) -> Self {
+            Self(seq, PhantomData)
+        }
+    }
+
+    impl<'de, S, T> Iterator for SeqAccessIterator<'de, S, T>
+    where
+        S: SeqAccess<'de>,
+        T: Deserialize<'de>,
+    {
+        type Item = Result<T, S::Error>;
+
+        #[inline]
+        fn next(&mut self) -> Option<Self::Item> {
+            match self.0.next_element() {
+                Ok(item) => item.map(Ok),
+                Err(err) => Some(Err(err)),
+            }
+        }
+    }
 
     /// Expression Visitor
     #[derive(Debug)]
-    pub struct Visitor<E>(PhantomData<E>);
+    pub struct Visitor<E>(PhantomData<E>)
+    where
+        E: Expression;
 
-    impl<E> Clone for Visitor<E> {
+    impl<E> Clone for Visitor<E>
+    where
+        E: Expression,
+    {
         #[inline]
         fn clone(&self) -> Self {
             Self(self.0)
         }
     }
 
-    impl<E> Copy for Visitor<E> {}
+    impl<E> Copy for Visitor<E> where E: Expression {}
 
-    impl<E> Default for Visitor<E> {
+    impl<E> Default for Visitor<E>
+    where
+        E: Expression,
+    {
         #[inline]
         fn default() -> Self {
             Self(Default::default())
         }
     }
 
-    impl<E> Eq for Visitor<E> {}
+    impl<E> Eq for Visitor<E> where E: Expression {}
 
-    impl<E> Hash for Visitor<E> {
+    impl<E> Hash for Visitor<E>
+    where
+        E: Expression,
+    {
         #[inline]
         fn hash<H: Hasher>(&self, state: &mut H) {
             self.0.hash(state)
         }
     }
 
-    impl<E> Ord for Visitor<E> {
+    impl<E> Ord for Visitor<E>
+    where
+        E: Expression,
+    {
         #[inline]
         fn cmp(&self, other: &Self) -> Ordering {
             self.0.cmp(&other.0)
         }
     }
 
-    impl<E> PartialEq for Visitor<E> {
+    impl<E> PartialEq for Visitor<E>
+    where
+        E: Expression,
+    {
         #[inline]
         fn eq(&self, other: &Self) -> bool {
             self.0.eq(&other.0)
         }
     }
 
-    impl<E> PartialOrd for Visitor<E> {
+    impl<E> PartialOrd for Visitor<E>
+    where
+        E: Expression,
+    {
         #[inline]
         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
             self.0.partial_cmp(&other.0)
         }
     }
 
-    impl<'de, E> serde::de::Visitor<'de> for Visitor<E> {
+    impl<'de, E> de::Visitor<'de> for Visitor<E>
+    where
+        E: Expression,
+        E::Atom: Deserialize<'de>,
+        E::Group: FromIterator<E>,
+    {
         type Value = E;
 
         #[inline]
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             write!(formatter, "an expression")
         }
+
+        fn visit_seq<S>(self, seq: S) -> Result<Self::Value, S::Error>
+        where
+            S: SeqAccess<'de>,
+        {
+            let _ = seq;
+            /* TODO: how to make this work
+            SeqAccessIterator::new(seq)
+                .collect::<Result<E::Group, _>>()
+                .map(E::from_group)
+            */
+            todo!()
+        }
     }
 
     /// Deserializes into an [`Expression`].
+    #[inline]
     pub fn deserialize<'de, D, E>(deserializer: D) -> Result<E, D::Error>
     where
         D: Deserializer<'de>,
@@ -2437,9 +2592,7 @@ pub mod de {
         E::Atom: Deserialize<'de>,
         E::Group: FromIterator<E>,
     {
-        // FIXME: implement
-        let _ = deserializer;
-        todo!()
+        deserializer.deserialize_any(Visitor::default())
     }
 }
 
