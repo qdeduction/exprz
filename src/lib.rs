@@ -4,6 +4,7 @@
 // TODO: implement `std::error::Error` for errors if `std` is enabled
 // TODO: add derive macros for `E: Expression` to get `Clone`, `PartialEq`, ... etc. for free
 // TODO: make sure that all the Expr/ExprRef methods inherit from their parameterized types
+// FIXME: for `Eq` implementations we need to constrain `E::Atom` to `Eq` not `PartialEq`
 
 #![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
 #![feature(generic_associated_types)]
@@ -2195,17 +2196,19 @@ pub mod parse {
         FromCharacters::default().parse(iter)
     }
 
-    /// Parses a string-like [`Expression`] from a string.
+    /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over characters.
     #[inline]
-    pub fn from_str<S, E>(s: S) -> Result<E, FromCharactersError>
+    pub fn from_chars_grouped<I, E>(iter: I) -> Result<E, FromCharactersError>
     where
-        S: AsRef<str>,
+        I: IntoIterator<Item = char>,
         E: Expression,
         E::Atom: FromIterator<char>,
         E::Group: FromIterator<E>,
     {
         // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
-        from_chars(s.as_ref().chars())
+        // FIXME: avoid using "magic chars" here
+        // FIXME: why doesnt `parse_group` work?
+        from_chars(Some('(').into_iter().chain(iter).chain(Some(')')))
     }
 
     /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over characters.
@@ -2225,9 +2228,33 @@ pub mod parse {
         E::Group: FromIterator<E>,
     {
         // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
-        // FIXME: avoid using "magic chars" here
-        // FIXME: why doesnt `parse_group` work?
-        from_chars(Some('(').into_iter().chain(iter).chain(Some(')'))).map(E::unwrap_group)
+        from_chars_grouped(iter).map(E::unwrap_group)
+    }
+
+    /// Parses a string-like [`Expression`] from a string.
+    #[inline]
+    pub fn from_str<S, E>(s: S) -> Result<E, FromCharactersError>
+    where
+        S: AsRef<str>,
+        E: Expression,
+        E::Atom: FromIterator<char>,
+        E::Group: FromIterator<E>,
+    {
+        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
+        from_chars(s.as_ref().chars())
+    }
+
+    /// Parses a string-like expression [`Group`](Expression::Group) from a string.
+    #[inline]
+    pub fn from_str_grouped<S, E>(s: S) -> Result<E, FromCharactersError>
+    where
+        S: AsRef<str>,
+        E: Expression,
+        E::Atom: FromIterator<char>,
+        E::Group: FromIterator<E>,
+    {
+        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
+        from_chars_grouped::<_, E>(s.as_ref().chars())
     }
 
     /// Parses a string-like expression [`Group`](Expression::Group) from a string.
@@ -2380,19 +2407,18 @@ pub mod parse {
         FromStrings::default().parse(iter)
     }
 
-    /// Parses a string-like [`Expression`] from a string using graphemes.
-    #[cfg(feature = "unicode")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "unicode")))]
+    /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over graphemes.
     #[inline]
-    pub fn from_graphemes<'s, E>(s: &'s str) -> Result<E, FromCharactersError>
+    pub fn from_strings_grouped<'s, I, E>(iter: I) -> Result<E, FromCharactersError>
     where
+        I: IntoIterator<Item = &'s str>,
         E: Expression,
         E::Atom: FromIterator<&'s str>,
         E::Group: FromIterator<E>,
     {
-        from_strings(unicode_segmentation::UnicodeSegmentation::graphemes(
-            s, true,
-        ))
+        // FIXME: avoid using "magic chars" here
+        // FIXME: why doesnt `parse_group` work?
+        from_strings(Some("(").into_iter().chain(iter).chain(Some(")")))
     }
 
     /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over graphemes.
@@ -2411,9 +2437,37 @@ pub mod parse {
         E::Atom: FromIterator<&'s str>,
         E::Group: FromIterator<E>,
     {
-        // FIXME: avoid using "magic chars" here
-        // FIXME: why doesnt `parse_group` work?
-        from_strings(Some("(").into_iter().chain(iter).chain(Some(")"))).map(E::unwrap_group)
+        from_strings_grouped(iter).map(E::unwrap_group)
+    }
+
+    /// Parses a string-like [`Expression`] from a string using graphemes.
+    #[cfg(feature = "unicode")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unicode")))]
+    #[inline]
+    pub fn from_graphemes<'s, E>(s: &'s str) -> Result<E, FromCharactersError>
+    where
+        E: Expression,
+        E::Atom: FromIterator<&'s str>,
+        E::Group: FromIterator<E>,
+    {
+        from_strings(unicode_segmentation::UnicodeSegmentation::graphemes(
+            s, true,
+        ))
+    }
+
+    /// Parses a string-like expression [`Group`](Expression::Group) from a string.
+    #[cfg(feature = "unicode")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unicode")))]
+    #[inline]
+    pub fn from_graphemes_grouped<'s, E>(s: &'s str) -> Result<E, FromCharactersError>
+    where
+        E: Expression,
+        E::Atom: FromIterator<&'s str>,
+        E::Group: FromIterator<E>,
+    {
+        from_strings_grouped(unicode_segmentation::UnicodeSegmentation::graphemes(
+            s, true,
+        ))
     }
 
     /// Parses a string-like expression [`Group`](Expression::Group) from a string.
