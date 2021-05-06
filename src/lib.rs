@@ -488,24 +488,24 @@ where
         E: 'e;
 
     /// Returns a shared reference to the group.
-    fn reference(&self) -> Self::Ref<'_>;
+    fn as_ref(&self) -> Self::Ref<'_>;
 
     /// Returns a size hint for the underlying iterator.
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.reference().size_hint()
+        self.as_ref().size_hint()
     }
 
     /// Returns the length of the group if it is known exactly.
     #[inline]
     fn len(&self) -> Option<usize> {
-        self.reference().len()
+        self.as_ref().len()
     }
 
     /// Returns `true` if the length of the group is known to be exactly zero.
     #[inline]
     fn is_empty(&self) -> bool {
-        self.reference().is_empty()
+        self.as_ref().is_empty()
     }
 
     /// Builds an empty group.
@@ -524,7 +524,7 @@ where
         E::Atom: Clone,
         E::Group: FromIterator<E>,
     {
-        self.reference().to_owned()
+        self.as_ref().to_owned()
     }
 
     /// Performs substitution over the [`Group`].
@@ -545,7 +545,7 @@ where
         E::Group: FromIterator<E>,
         F: FnMut(&E::Atom) -> E,
     {
-        self.reference().substitute_ref(f)
+        self.as_ref().substitute_ref(f)
     }
 }
 
@@ -559,7 +559,7 @@ where
     = &'e Self;
 
     #[inline]
-    fn reference(&self) -> Self::Ref<'_> {
+    fn as_ref(&self) -> Self::Ref<'_> {
         self
     }
 }
@@ -576,7 +576,7 @@ where
     = &'e Self;
 
     #[inline]
-    fn reference(&self) -> Self::Ref<'_> {
+    fn as_ref(&self) -> Self::Ref<'_> {
         self
     }
 }
@@ -1493,7 +1493,7 @@ where
     fn from(expr: &'e Expr<E>) -> Self {
         match expr {
             Expr::Atom(atom) => Self::Atom(atom),
-            Expr::Group(group) => Self::Group(group.reference()),
+            Expr::Group(group) => Self::Group(group.as_ref()),
         }
     }
 }
@@ -3614,7 +3614,7 @@ pub mod vec {
                 Self: 'e,
             = (&'e Vec<MultiExpr<A, G>>, &'e G);
 
-            fn reference(&self) -> Self::Ref<'_> {
+            fn as_ref(&self) -> Self::Ref<'_> {
                 (&self.0, &self.1)
             }
         }
@@ -3736,7 +3736,7 @@ pub mod buffered {
             T: 'e,
         = ExprGroupReference<'e, T>;
 
-        fn reference(&self) -> Self::Ref<'_> {
+        fn as_ref(&self) -> Self::Ref<'_> {
             todo!()
         }
     }
