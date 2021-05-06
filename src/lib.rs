@@ -1,13 +1,16 @@
 //! An Expression Library
 
-// TODO: implement `Deref/Borrow/ToOwned` traits where possible
-// TODO: implement `std::error::Error` for errors if `std` is enabled
-// TODO: add derive macros for `E: Expression` to get `Clone`, `PartialEq`, ... etc. for free
-// TODO: make sure that all the Expr/ExprRef methods inherit from their parameterized types
+// TODO:  implement `Deref/Borrow/ToOwned` traits where possible
+// TODO:  implement `std::error::Error` for errors if `std` is enabled
+// TODO:  add derive macros for `E: Expression` to get `Clone`, `PartialEq`, ... etc. for free
+// FIXME: we need to put all of the implementations in the main traits and have `Expr/ExprRef` use
+//        the trait implementations somehow
 // FIXME: for `Eq` implementations we need to constrain `E::Atom` to `Eq` not `PartialEq`
+// TODO:  add async parsing
 
 #![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
 #![feature(generic_associated_types)]
+#![feature(associated_type_defaults)]
 #![allow(incomplete_features)]
 #![forbid(unsafe_code)]
 #![no_std]
@@ -29,7 +32,10 @@ use rayon::iter::{
 };
 
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Serialize, Serializer};
+
+#[cfg(all(feature = "parse", feature = "serde"))]
+use serde::{Deserialize, Deserializer};
 
 /// Package Version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -166,6 +172,39 @@ where
     }
 }
 
+/// [`Expression`] Mutable Reference Trait
+pub trait ReferenceMut<'e, E>: From<&'e mut E>
+where
+    E: 'e + Expression,
+    E::Group: GroupMut<E>,
+{
+    /// Returns the inner expression mutable reference.
+    fn cases_mut(self) -> ExprRefMut<'e, E>;
+}
+
+impl<'e, E> ReferenceMut<'e, E> for &'e mut E
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    #[inline]
+    fn cases_mut(self) -> ExprRefMut<'e, E> {
+        // FIXME: implement
+        todo!()
+    }
+}
+
+impl<'e, E> ReferenceMut<'e, E> for ExprRefMut<'e, E>
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    #[inline]
+    fn cases_mut(self) -> Self {
+        self
+    }
+}
+
 /// [`Expression Group`](Expression::Group) Reference Trait
 pub trait GroupReference<E>
 where
@@ -174,7 +213,8 @@ where
     /// Element of a [`GroupReference`]
     type Item<'e>: Reference<'e, E>
     where
-        E: 'e;
+        E: 'e,
+    = &'e E;
 
     /// Iterator over [`GroupReference::Item`]
     type Iter<'e>: Iterator<Item = Self::Item<'e>>
@@ -234,11 +274,6 @@ impl<E> GroupReference<E> for &[E]
 where
     E: Expression,
 {
-    type Item<'e>
-    where
-        E: 'e,
-    = &'e E;
-
     type Iter<'e>
     where
         E: 'e,
@@ -256,11 +291,6 @@ impl<E> GroupReference<E> for &Vec<E>
 where
     E: Expression,
 {
-    type Item<'e>
-    where
-        E: 'e,
-    = &'e E;
-
     type Iter<'e>
     where
         E: 'e,
@@ -392,6 +422,61 @@ where
 }
 */
 
+/// [`Expression Group`](Expression::Group) Mutable Reference Trait
+pub trait GroupReferenceMut<E>
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    /// Element of a [`GroupReferenceMut`]
+    type ItemMut<'e>: ReferenceMut<'e, E>
+    where
+        E: 'e,
+    = &'e mut E;
+
+    /// Iterator over [`GroupReferenceMut::ItemMut`]
+    type IterMut<'e>: Iterator<Item = Self::ItemMut<'e>>
+    where
+        E: 'e;
+
+    /// Returns a group mutable reference iterator.
+    fn iter_mut(&mut self) -> Self::IterMut<'_>;
+}
+
+impl<E> GroupReferenceMut<E> for &mut [E]
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    type IterMut<'e>
+    where
+        E: 'e,
+    = slice::IterMut<'e, E>;
+
+    #[inline]
+    fn iter_mut(&mut self) -> Self::IterMut<'_> {
+        self[..].iter_mut()
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<E> GroupReferenceMut<E> for &mut Vec<E>
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    type IterMut<'e>
+    where
+        E: 'e,
+    = slice::IterMut<'e, E>;
+
+    #[inline]
+    fn iter_mut(&mut self) -> Self::IterMut<'_> {
+        self[..].iter_mut()
+    }
+}
+
 /// [`Expression Group`](Expression::Group) Trait
 pub trait Group<E>
 where
@@ -402,7 +487,7 @@ where
     where
         E: 'e;
 
-    /// Returns an inner reference to the group.
+    /// Returns a shared reference to the group.
     fn reference(&self) -> Self::Ref<'_>;
 
     /// Returns a size hint for the underlying iterator.
@@ -505,6 +590,64 @@ pub type GroupRefIter<'e, 'i, E> = <GroupRef<'e, E> as GroupReference<E>>::Iter<
 /// [`Expression`] [`Group Reference`](GroupReference) [`Iterator Item`](GroupReference::Item) Alias
 pub type GroupRefItem<'e, 'i, E> = <GroupRef<'e, E> as GroupReference<E>>::Item<'i>;
 
+/// Mutable [`Expression Group`](Expression::Group) Trait
+pub trait GroupMut<E>
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    /// [`Group`](Expression::Group) Mutable Reference Type
+    type RefMut<'e>: GroupReferenceMut<E>
+    where
+        E: 'e;
+
+    /// Returns a mutable reference to the group.
+    fn as_mut(&mut self) -> Self::RefMut<'_>;
+}
+
+impl<E> GroupMut<E> for [E]
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    type RefMut<'e>
+    where
+        E: 'e,
+    = &'e mut Self;
+
+    #[inline]
+    fn as_mut(&mut self) -> Self::RefMut<'_> {
+        self
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<E> GroupMut<E> for Vec<E>
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    type RefMut<'e>
+    where
+        E: 'e,
+    = &'e mut Self;
+
+    #[inline]
+    fn as_mut(&mut self) -> Self::RefMut<'_> {
+        self
+    }
+}
+
+/// [`Expression`] [`Group Mutable Reference`](GroupReferenceMut) Alias
+pub type GroupRefMut<'e, E> = <<E as Expression>::Group as GroupMut<E>>::RefMut<'e>;
+
+/// [`Expression`] [`Group Mutable Reference Iterator`](GroupReferenceMut::IterMut) Alias
+pub type GroupRefMutIter<'e, 'i, E> = <GroupRefMut<'e, E> as GroupReferenceMut<E>>::IterMut<'i>;
+
+/// [`Expression`] [`Group Mutable Reference`](GroupReferenceMut) [`Iterator Item`](GroupReferenceMut::ItemMut) Alias
+pub type GroupRefMutItem<'e, 'i, E> = <GroupRefMut<'e, E> as GroupReferenceMut<E>>::ItemMut<'i>;
+
 /// Expression Trait
 pub trait Expression
 where
@@ -548,8 +691,8 @@ where
     }
 
     /// Deserializes into an [`Expression`].
-    #[cfg(feature = "serde")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+    #[cfg(all(feature = "parse", feature = "serde"))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "parse", feature = "serde"))))]
     #[inline]
     fn deserialize<'de, D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -919,6 +1062,13 @@ pub mod multi {
     }
 }
 
+/// Expression Insertion Error
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum InsertionError {
+    Empty,
+    NonEmptyAtomic,
+}
+
 /// Internal Reference to an [`Expression`] Type
 pub enum ExprRef<'e, E>
 where
@@ -1153,6 +1303,38 @@ where
         }
     }
 
+    /// Inserts an expression at the location given by `cursor`.
+    #[inline]
+    pub fn insert_at_ref<C>(&self, cursor: C, expr: E) -> Result<E, InsertionError>
+    where
+        C: IntoIterator<Item = usize>,
+    {
+        let mut cursor = cursor.into_iter();
+        match (self, cursor.next()) {
+            (Self::Atom(_), None) => Ok(expr),
+            (Self::Group(group), Some(first)) => {
+                Self::insert_at_ref_inner(group, first, cursor, expr)
+            }
+            (Self::Atom(_), Some(_)) => Err(InsertionError::NonEmptyAtomic),
+            (Self::Group(_), None) => Err(InsertionError::Empty),
+        }
+    }
+
+    #[inline]
+    fn insert_at_ref_inner<C>(
+        group: &GroupRef<'e, E>,
+        first: usize,
+        cursor: C,
+        expr: E,
+    ) -> Result<E, InsertionError>
+    where
+        C: Iterator<Item = usize>,
+    {
+        // FIXME: implement
+        let _ = (group, first, cursor, expr);
+        todo!()
+    }
+
     /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
     /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     pub fn is_subexpression<'r, R>(&self, other: &ExprRef<'r, R>) -> bool
@@ -1331,6 +1513,47 @@ where
         match &self {
             Self::Atom(atom) => atom.serialize(serializer),
             Self::Group(group) => serializer.collect_seq(group.iter().map(move |e| e.cases())),
+        }
+    }
+}
+
+/// Internal Mutable Reference to an [`Expression`] Type
+pub enum ExprRefMut<'e, E>
+where
+    E: 'e + Expression,
+    E::Group: GroupMut<E>,
+{
+    /// Mutable reference to an atomic expression
+    Atom(&'e mut E::Atom),
+
+    /// Mutable reference to a grouped expression
+    Group(GroupRefMut<'e, E>),
+}
+
+impl<'e, E> From<&'e mut E> for ExprRefMut<'e, E>
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    #[inline]
+    fn from(expr: &'e mut E) -> Self {
+        // FIXME: implement
+        let _ = expr;
+        todo!()
+    }
+}
+
+impl<'e, E> From<&'e mut Expr<E>> for ExprRefMut<'e, E>
+where
+    E: Expression,
+    E::Group: GroupMut<E>,
+{
+    #[must_use]
+    #[inline]
+    fn from(expr: &'e mut Expr<E>) -> Self {
+        match expr {
+            Expr::Atom(atom) => Self::Atom(atom),
+            Expr::Group(group) => Self::Group(group.as_mut()),
         }
     }
 }
@@ -1599,8 +1822,8 @@ where
     }
 }
 
-#[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(all(feature = "parse", feature = "serde"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "parse", feature = "serde"))))]
 impl<'de, E> Deserialize<'de> for Expr<E>
 where
     E: 'de + Expression,
@@ -2492,8 +2715,8 @@ pub mod parse {
 }
 
 /// Serde Deserialization Module
-#[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(all(feature = "parse", feature = "serde"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "parse", feature = "serde"))))]
 pub mod de {
     use {
         super::*,
@@ -3274,8 +3497,8 @@ pub mod vec {
         }
     }
 
-    #[cfg(feature = "serde")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+    #[cfg(all(feature = "parse", feature = "serde"))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "parse", feature = "serde"))))]
     impl<'de, A> Deserialize<'de> for Expr<A>
     where
         A: 'de + FromIterator<char>,
