@@ -877,6 +877,27 @@ where
         self.cases().parallel_eq(&other.cases())
     }
 
+    /// Inserts an expression at the location given by `cursor`.
+    #[inline]
+    fn insert_at<C>(self, cursor: C, expr: Self) -> Result<Self, InsertionError>
+    where
+        Self::Group: FromIterator<Self> + IntoIterator<Item = Self>,
+        C: IntoIterator<Item = usize>,
+    {
+        self.into().insert_at(cursor, expr)
+    }
+
+    /// Inserts an expression at the location given by `cursor`.
+    #[inline]
+    fn insert_at_ref<C>(&self, cursor: C, expr: Self) -> Result<Self, InsertionError>
+    where
+        Self::Atom: Clone,
+        Self::Group: FromIterator<Self>,
+        C: IntoIterator<Item = usize>,
+    {
+        self.cases().insert_at_ref(cursor, expr)
+    }
+
     /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
     /// [`PartialEq`] on their [`Atoms`](Expression::Atom).
     #[inline]
@@ -1067,17 +1088,35 @@ pub mod multi {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum InsertionError {
-    ///
-    Empty,
+    /// Error when trying to insert with an empty cursor on a grouped expression
+    EmptyGrouped,
 
-    ///
+    /// Error when trying to insert with a non-empty cursor on an atomic expression
     NonEmptyAtomic,
 }
 
 impl InsertionError {
     /// Checks if the insertion would be invalid upon invocation.
     #[inline]
-    pub fn check_invocation<'b, 'e, E>(
+    pub fn check_invocation<E>(
+        base: Expr<E>,
+        first: impl Into<Option<usize>>,
+    ) -> Result<Option<(E::Group, usize)>, Self>
+    where
+        E: Expression,
+    {
+        // FIXME: make the calling convention friendlier
+        match (base.group(), first.into()) {
+            (Some(group), Some(first)) => Ok(Some((group, first))),
+            (Some(_), None) => Err(Self::EmptyGrouped),
+            (None, Some(_)) => Err(Self::NonEmptyAtomic),
+            (None, None) => Ok(None),
+        }
+    }
+
+    /// Checks if the insertion would be invalid upon invocation.
+    #[inline]
+    pub fn check_invocation_ref<'b, 'e, E>(
         base: &'b ExprRef<'e, E>,
         first: impl Into<Option<usize>>,
     ) -> Result<Option<(&'b GroupRef<'e, E>, usize)>, Self>
@@ -1087,7 +1126,7 @@ impl InsertionError {
         // FIXME: make the calling convention friendlier
         match (base.group_ref(), first.into()) {
             (Some(group), Some(first)) => Ok(Some((group, first))),
-            (Some(_), None) => Err(Self::Empty),
+            (Some(_), None) => Err(Self::EmptyGrouped),
             (None, Some(_)) => Err(Self::NonEmptyAtomic),
             (None, None) => Ok(None),
         }
@@ -1352,32 +1391,19 @@ where
         E::Group: FromIterator<E>,
         C: Iterator<Item = usize>,
     {
-        match InsertionError::check_invocation(self, next)? {
-            Some((group, first)) => Self::insert_at_ref_inner_loop(group, first, cursor, expr),
+        // TODO: call `insert_at_ref_inner` using `E` so that we can override its behavior for
+        // optimization
+        match InsertionError::check_invocation_ref(self, next)? {
+            Some((group, first)) => util::map_once_at_index(
+                group.iter(),
+                first,
+                move |e| Ok(e.to_owned()),
+                move |e| e.cases().insert_at_ref_inner(cursor.next(), cursor, expr),
+            )
+            .collect::<Result<_, _>>()
+            .map(E::from_group),
             _ => Ok(expr),
         }
-    }
-
-    #[inline]
-    fn insert_at_ref_inner_loop<C>(
-        group: &GroupRef<'e, E>,
-        next: usize,
-        cursor: &mut C,
-        expr: E,
-    ) -> Result<E, InsertionError>
-    where
-        E::Atom: Clone,
-        E::Group: FromIterator<E>,
-        C: Iterator<Item = usize>,
-    {
-        util::map_once_at_index(
-            group.iter(),
-            next,
-            move |e| Ok(e.to_owned()),
-            move |e| e.cases().insert_at_ref_inner(cursor.next(), cursor, expr),
-        )
-        .collect::<Result<_, _>>()
-        .map(E::from_group)
     }
 
     /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
@@ -1767,6 +1793,42 @@ where
         match self {
             Self::Atom(atom) => f(atom),
             Self::Group(group) => E::from_group(Self::substitute_group_inner(group.into_iter(), f)),
+        }
+    }
+
+    /// Inserts an expression at the location given by `cursor`.
+    #[inline]
+    pub fn insert_at<C>(self, cursor: C, expr: E) -> Result<E, InsertionError>
+    where
+        E::Group: FromIterator<E> + IntoIterator<Item = E>,
+        C: IntoIterator<Item = usize>,
+    {
+        let mut cursor = cursor.into_iter();
+        self.insert_at_inner(cursor.next(), &mut cursor, expr)
+    }
+
+    #[inline]
+    fn insert_at_inner<C>(
+        self,
+        next: Option<usize>,
+        cursor: &mut C,
+        expr: E,
+    ) -> Result<E, InsertionError>
+    where
+        E::Group: FromIterator<E> + IntoIterator<Item = E>,
+        C: Iterator<Item = usize>,
+    {
+        // TODO: call `insert_at_inner` using `E` so that we can override its behavior for
+        // optimization
+        match InsertionError::check_invocation(self, next)? {
+            Some((group, first)) => {
+                util::map_once_at_index(group.into_iter(), first, Ok, move |e| {
+                    e.into().insert_at_inner(cursor.next(), cursor, expr)
+                })
+                .collect::<Result<_, _>>()
+                .map(E::from_group)
+            }
+            _ => Ok(expr),
         }
     }
 }
