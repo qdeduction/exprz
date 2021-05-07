@@ -7,6 +7,7 @@
 //        the trait implementations somehow
 // FIXME: for `Eq` implementations we need to constrain `E::Atom` to `Eq` not `PartialEq`
 // TODO:  add async parsing
+// TODO:  reconsider how we use `Clone`/`PartialEq` on interfaces, maybe we should just have `E: Trait`
 
 #![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
 #![feature(generic_associated_types)]
@@ -1063,10 +1064,34 @@ pub mod multi {
 }
 
 /// Expression Insertion Error
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum InsertionError {
+    ///
     Empty,
+
+    ///
     NonEmptyAtomic,
+}
+
+impl InsertionError {
+    /// Checks if the insertion would be invalid upon invocation.
+    #[inline]
+    pub fn check_invocation<'b, 'e, E>(
+        base: &'b ExprRef<'e, E>,
+        first: impl Into<Option<usize>>,
+    ) -> Result<Option<(&'b GroupRef<'e, E>, usize)>, Self>
+    where
+        E: Expression,
+    {
+        // FIXME: make the calling convention friendlier
+        match (base.group_ref(), first.into()) {
+            (Some(group), Some(first)) => Ok(Some((group, first))),
+            (Some(_), None) => Err(Self::Empty),
+            (None, Some(_)) => Err(Self::NonEmptyAtomic),
+            (None, None) => Ok(None),
+        }
+    }
 }
 
 /// Internal Reference to an [`Expression`] Type
@@ -1307,32 +1332,52 @@ where
     #[inline]
     pub fn insert_at_ref<C>(&self, cursor: C, expr: E) -> Result<E, InsertionError>
     where
+        E::Atom: Clone,
+        E::Group: FromIterator<E>,
         C: IntoIterator<Item = usize>,
     {
         let mut cursor = cursor.into_iter();
-        match (self, cursor.next()) {
-            (Self::Atom(_), None) => Ok(expr),
-            (Self::Group(group), Some(first)) => {
-                Self::insert_at_ref_inner(group, first, cursor, expr)
-            }
-            (Self::Atom(_), Some(_)) => Err(InsertionError::NonEmptyAtomic),
-            (Self::Group(_), None) => Err(InsertionError::Empty),
-        }
+        self.insert_at_ref_inner(cursor.next(), &mut cursor, expr)
     }
 
     #[inline]
     fn insert_at_ref_inner<C>(
-        group: &GroupRef<'e, E>,
-        first: usize,
-        cursor: C,
+        &self,
+        next: Option<usize>,
+        cursor: &mut C,
         expr: E,
     ) -> Result<E, InsertionError>
     where
+        E::Atom: Clone,
+        E::Group: FromIterator<E>,
         C: Iterator<Item = usize>,
     {
-        // FIXME: implement
-        let _ = (group, first, cursor, expr);
-        todo!()
+        match InsertionError::check_invocation(self, next)? {
+            Some((group, first)) => Self::insert_at_ref_inner_loop(group, first, cursor, expr),
+            _ => Ok(expr),
+        }
+    }
+
+    #[inline]
+    fn insert_at_ref_inner_loop<C>(
+        group: &GroupRef<'e, E>,
+        next: usize,
+        cursor: &mut C,
+        expr: E,
+    ) -> Result<E, InsertionError>
+    where
+        E::Atom: Clone,
+        E::Group: FromIterator<E>,
+        C: Iterator<Item = usize>,
+    {
+        util::map_once_at_index(
+            group.iter(),
+            next,
+            move |e| Ok(e.to_owned()),
+            move |e| e.cases().insert_at_ref_inner(cursor.next(), cursor, expr),
+        )
+        .collect::<Result<_, _>>()
+        .map(E::from_group)
     }
 
     /// Checks if an [`Expression`] is a sub-tree of another [`Expression`] using
@@ -1897,6 +1942,8 @@ where
 
 /// Utilities Module
 pub mod util {
+    use core::fmt;
+
     /// Checks if two iterators are equal pointwise.
     pub fn eq_by<L, R, F>(lhs: L, rhs: R, mut eq: F) -> bool
     where
@@ -1920,6 +1967,123 @@ pub mod util {
             if !eq(x, y) {
                 return false;
             }
+        }
+    }
+
+    /// Takes a closure and creates an iterator which calls that closure on each element, except
+    /// for one special element, the first one to match the predicate, where the iterator calls the second
+    /// closure instead.
+    #[inline]
+    pub fn map_first_once<B, I, M, P, F>(
+        iter: I,
+        map: M,
+        predicate: P,
+        once: F,
+    ) -> MapFirstOnce<I, M, P, F>
+    where
+        I: Iterator,
+        M: FnMut(I::Item) -> B,
+        P: FnMut(&I::Item) -> bool,
+        F: FnOnce(I::Item) -> B,
+    {
+        MapFirstOnce::new(iter, map, predicate, once)
+    }
+
+    /// Takes a closure and creates an iterator which calls that closure on each element, except
+    /// for one special element at the given index, where the iterator calls the second closure
+    /// instead.
+    #[inline]
+    pub fn map_once_at_index<B, I, M, F>(
+        iter: I,
+        index: usize,
+        mut map: M,
+        once: F,
+    ) -> impl Iterator<Item = B>
+    where
+        I: Iterator,
+        M: FnMut(I::Item) -> B,
+        F: FnOnce(I::Item) -> B,
+    {
+        // FIXME: return an iterator structure so we can optimize further chains
+        map_first_once(
+            iter.enumerate(),
+            move |(_, n)| map(n),
+            move |(i, _)| *i == index,
+            move |(_, n)| once(n),
+        )
+    }
+
+    /// Map First Once Iterator
+    ///
+    /// This iterator is an extension of the [`Map`] iterator which allows for one special value
+    /// (specified by the `predicate: P`) to be modified by a `FnOnce` function instead of by an
+    /// `FnMut` function.
+    ///
+    /// See [`map_first_once`] for more information.
+    ///
+    /// [`Map`]: core::iter::Map
+    //
+    // TODO: implement the same optimizations/impls as `core::iter::Map`
+    //
+    #[must_use = "iterators are lazy and do nothing unless consumed"]
+    #[derive(Clone)]
+    pub struct MapFirstOnce<I, M, P, F> {
+        iter: I,
+        map: M,
+        predicate_and_once: Option<(P, F)>,
+    }
+
+    impl<I, M, P, F> MapFirstOnce<I, M, P, F> {
+        #[inline]
+        fn new(iter: I, map: M, predicate: P, once: F) -> Self {
+            Self {
+                iter,
+                map,
+                predicate_and_once: Some((predicate, once)),
+            }
+        }
+    }
+
+    impl<I, M, P, F> fmt::Debug for MapFirstOnce<I, M, P, F>
+    where
+        I: fmt::Debug,
+    {
+        #[inline]
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("MapOnce").field("iter", &self.iter).finish()
+        }
+    }
+
+    impl<B, I, M, P, F> Iterator for MapFirstOnce<I, M, P, F>
+    where
+        I: Iterator,
+        M: FnMut(I::Item) -> B,
+        P: FnMut(&I::Item) -> bool,
+        F: FnOnce(I::Item) -> B,
+    {
+        type Item = B;
+
+        #[inline]
+        fn next(&mut self) -> Option<B> {
+            match self.iter.next() {
+                Some(next) => match self.predicate_and_once.take() {
+                    Some((mut predicate, once)) => {
+                        if predicate(&next) {
+                            Some(once(next))
+                        } else {
+                            self.predicate_and_once = Some((predicate, once));
+                            Some((self.map)(next))
+                        }
+                    }
+                    _ => Some((self.map)(next)),
+                },
+                _ => None,
+            }
+        }
+
+        #[inline]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            self.iter.size_hint()
         }
     }
 }
