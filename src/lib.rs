@@ -2286,16 +2286,12 @@ pub mod parse {
             I: IntoIterator<Item = T>,
         {
             let mut iter = iter.into_iter().peekable();
-            if let Some(true) = iter
-                .peek()
-                .map(|p| matches!(self.classify(p), SymbolType::Skip))
-            {
-                return Err(Error::LeadingSkipSymbols);
-            }
-            let expr = self.parse_continue(&mut iter);
-            iter.next()
-                .map(move |_| Err(Error::TooManyExpressions))
-                .unwrap_or(expr)
+            parse_check(self, &mut iter).and_then(move |_| {
+                let expr = self.parse_continue(&mut iter);
+                iter.next()
+                    .map(move |_| Err(Error::TooManyExpressions))
+                    .unwrap_or(expr)
+            })
         }
 
         /// Tries to parse an [`Expression`] from an [`Iterator`] over `T`.
@@ -2473,7 +2469,7 @@ pub mod parse {
         }
 
         /// Parses [`Expression Tokens`](Token) from an [`Iterator`] over `T`.
-        fn tokens<I>(&mut self, iter: I) -> Tokens<T, E, Self, I>
+        fn tokens<I>(&mut self, iter: I) -> Result<Tokens<T, E, Self, I>, Self::AtomParseError>
         where
             I: IntoIterator<Item = T>,
         {
@@ -2569,6 +2565,26 @@ pub mod parse {
         }
     }
 
+    #[inline]
+    fn parse_check<T, E, P, I>(
+        parser: &mut P,
+        iter: &mut Peekable<I>,
+    ) -> Result<(), P::AtomParseError>
+    where
+        E: Expression,
+        P: ?Sized + Parser<T, E>,
+        I: Iterator<Item = T>,
+    {
+        if let Some(true) = iter
+            .peek()
+            .map(|p| matches!(parser.classify(p), SymbolType::Skip))
+        {
+            Err(Error::LeadingSkipSymbols)
+        } else {
+            Ok(())
+        }
+    }
+
     /// [`Tokens`] Iterator Item
     pub type TokensItem<E, AtomParseError> =
         result::Result<Token<<E as Expression>::Atom>, AtomParseError>;
@@ -2620,16 +2636,18 @@ pub mod parse {
 
     impl<'p, T, E, P, I> Tokens<'p, T, E, P, I>
     where
-        P: ?Sized,
-        I: IntoIterator,
+        E: Expression,
+        P: ?Sized + Parser<T, E>,
+        I: IntoIterator<Item = T>,
     {
         #[inline]
-        fn new(parser: &'p mut P, iter: I) -> Self {
-            Self {
+        fn new(parser: &'p mut P, iter: I) -> Result<Self, P::AtomParseError> {
+            let mut iter = iter.into_iter().peekable();
+            parse_check(parser, &mut iter).map(move |_| Self {
                 parser,
-                iter: iter.into_iter().peekable(),
+                iter,
                 __: PhantomData,
-            }
+            })
         }
     }
 
@@ -2832,38 +2850,18 @@ pub mod parse {
 
     /// Parses an expression [`Group`](Expression::Group) from an iterator over tokens.
     #[inline]
-    pub fn from_tokens_grouped<I, E>(iter: I) -> Result<E, ()>
-    where
-        I: IntoIterator<Item = Token<E::Atom>>,
-        E: Expression,
-        E::Group: FromIterator<E>,
-    {
-        // FIXME: avoid using "magic chars" here
-        // FIXME: why doesnt `parse_group` work?
-        from_tokens(
-            Some(Token::GroupOpen)
-                .into_iter()
-                .chain(iter)
-                .chain(Some(Token::GroupClose)),
-        )
-    }
-
-    /// Parses an expression [`Group`](Expression::Group) from an iterator over tokens.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parsing was a valid [`Expression`] but not a [`Group`](Expression::Group).
-    #[cfg(feature = "panic")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "panic")))]
-    #[inline]
-    #[track_caller]
     pub fn from_tokens_as_group<I, E>(iter: I) -> Result<E::Group, ()>
     where
         I: IntoIterator<Item = Token<E::Atom>>,
         E: Expression,
         E::Group: FromIterator<E>,
     {
-        from_tokens_grouped(iter).map(E::unwrap_group)
+        FromTokens::<E>::default().parse_group(
+            Some(Token::GroupOpen)
+                .into_iter()
+                .chain(iter)
+                .chain(Some(Token::GroupClose)),
+        )
     }
 
     /// [`Expression`] Parser from [`Iterator`]s over [`char`]
@@ -2999,28 +2997,6 @@ pub mod parse {
 
     /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over characters.
     #[inline]
-    pub fn from_chars_grouped<I, E>(iter: I) -> Result<E, FromCharactersError>
-    where
-        I: IntoIterator<Item = char>,
-        E: Expression,
-        E::Atom: FromIterator<char>,
-        E::Group: FromIterator<E>,
-    {
-        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
-        // FIXME: avoid using "magic chars" here
-        // FIXME: why doesnt `parse_group` work?
-        from_chars(Some('(').into_iter().chain(iter).chain(Some(')')))
-    }
-
-    /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over characters.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parsing was a valid [`Expression`] but not a [`Group`](Expression::Group).
-    #[cfg(feature = "panic")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "panic")))]
-    #[inline]
-    #[track_caller]
     pub fn from_chars_as_group<I, E>(iter: I) -> Result<E::Group, FromCharactersError>
     where
         I: IntoIterator<Item = char>,
@@ -3029,7 +3005,12 @@ pub mod parse {
         E::Group: FromIterator<E>,
     {
         // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
-        from_chars_grouped(iter).map(E::unwrap_group)
+        let mut parser = FromCharacters::default();
+        let iter = Some(parser.open)
+            .into_iter()
+            .chain(iter)
+            .chain(Some(parser.close));
+        Parser::<_, E>::parse_group(&mut parser, iter)
     }
 
     /// Parses a string-like [`Expression`] from a string.
@@ -3047,26 +3028,6 @@ pub mod parse {
 
     /// Parses a string-like expression [`Group`](Expression::Group) from a string.
     #[inline]
-    pub fn from_str_grouped<S, E>(s: S) -> Result<E, FromCharactersError>
-    where
-        S: AsRef<str>,
-        E: Expression,
-        E::Atom: FromIterator<char>,
-        E::Group: FromIterator<E>,
-    {
-        // TODO: should we interface with `FromStr` for atoms or `FromIterator<char>`?
-        from_chars_grouped::<_, E>(s.as_ref().chars())
-    }
-
-    /// Parses a string-like expression [`Group`](Expression::Group) from a string.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parsing was a valid [`Expression`] but not a [`Group`](Expression::Group).
-    #[cfg(feature = "panic")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "panic")))]
-    #[inline]
-    #[track_caller]
     pub fn from_str_as_group<S, E>(s: S) -> Result<E::Group, FromCharactersError>
     where
         S: AsRef<str>,
@@ -3210,27 +3171,6 @@ pub mod parse {
 
     /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over graphemes.
     #[inline]
-    pub fn from_strings_grouped<'s, I, E>(iter: I) -> Result<E, FromCharactersError>
-    where
-        I: IntoIterator<Item = &'s str>,
-        E: Expression,
-        E::Atom: FromIterator<&'s str>,
-        E::Group: FromIterator<E>,
-    {
-        // FIXME: avoid using "magic chars" here
-        // FIXME: why doesnt `parse_group` work?
-        from_strings(Some("(").into_iter().chain(iter).chain(Some(")")))
-    }
-
-    /// Parses a string-like expression [`Group`](Expression::Group) from an iterator over graphemes.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parsing was a valid [`Expression`] but not a [`Group`](Expression::Group).
-    #[cfg(feature = "panic")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "panic")))]
-    #[inline]
-    #[track_caller]
     pub fn from_strings_as_group<'s, I, E>(iter: I) -> Result<E::Group, FromCharactersError>
     where
         I: IntoIterator<Item = &'s str>,
@@ -3238,7 +3178,12 @@ pub mod parse {
         E::Atom: FromIterator<&'s str>,
         E::Group: FromIterator<E>,
     {
-        from_strings_grouped(iter).map(E::unwrap_group)
+        let mut parser = FromStrings::default();
+        let iter = Some(parser.open)
+            .into_iter()
+            .chain(iter)
+            .chain(Some(parser.close));
+        Parser::<_, E>::parse_group(&mut parser, iter)
     }
 
     /// Parses a string-like [`Expression`] from a string using graphemes.
@@ -3257,29 +3202,7 @@ pub mod parse {
     }
 
     /// Parses a string-like expression [`Group`](Expression::Group) from a string.
-    #[cfg(feature = "unicode")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "unicode")))]
     #[inline]
-    pub fn from_graphemes_grouped<'s, E>(s: &'s str) -> Result<E, FromCharactersError>
-    where
-        E: Expression,
-        E::Atom: FromIterator<&'s str>,
-        E::Group: FromIterator<E>,
-    {
-        from_strings_grouped(unicode_segmentation::UnicodeSegmentation::graphemes(
-            s, true,
-        ))
-    }
-
-    /// Parses a string-like expression [`Group`](Expression::Group) from a string.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the parsing was a valid [`Expression`] but not a [`Group`](Expression::Group).
-    #[cfg(all(feature = "panic", feature = "unicode"))]
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "panic", feature = "unicode"))))]
-    #[inline]
-    #[track_caller]
     pub fn from_graphemes_as_group<'s, E>(s: &'s str) -> Result<E::Group, FromCharactersError>
     where
         E: Expression,
