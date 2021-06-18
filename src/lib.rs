@@ -8,11 +8,12 @@
 // FIXME: for `Eq` implementations we need to constrain `E::Atom` to `Eq` not `PartialEq`
 // TODO:  add async parsing
 // TODO:  reconsider how we use `Clone`/`PartialEq` on interfaces, maybe we should just have `E: Trait`
+// TODO:  rename `is_subexpression` to `contains`? (and flip the arguments) add `contains_atom/group`?
 
-#![cfg_attr(docsrs, feature(doc_cfg), deny(broken_intra_doc_links))]
-#![feature(generic_associated_types)]
-#![feature(associated_type_defaults)]
+#![cfg_attr(docsrs, feature(doc_cfg), forbid(broken_intra_doc_links))]
+#![feature(associated_type_defaults, generic_associated_types)]
 #![allow(incomplete_features)]
+#![forbid(missing_docs)]
 #![forbid(unsafe_code)]
 #![no_std]
 
@@ -190,7 +191,7 @@ where
 {
     #[inline]
     fn cases_mut(self) -> ExprRefMut<'e, E> {
-        // FIXME: implement
+        // FIXME: only way to implement this is to ask `E: Expression` for it
         todo!()
     }
 }
@@ -884,6 +885,7 @@ where
         Self::Group: FromIterator<Self> + IntoIterator<Item = Self>,
         C: IntoIterator<Item = usize>,
     {
+        // TODO: add `insert_at_with` so that we only construct the `expr` if we need it
         self.into().insert_at(cursor, expr)
     }
 
@@ -895,6 +897,7 @@ where
         Self::Group: FromIterator<Self>,
         C: IntoIterator<Item = usize>,
     {
+        // TODO: add `insert_at_ref_with` so that we only construct the `expr` if we need it
         self.cases().insert_at_ref(cursor, expr)
     }
 
@@ -1608,9 +1611,7 @@ where
 {
     #[inline]
     fn from(expr: &'e mut E) -> Self {
-        // FIXME: implement
-        let _ = expr;
-        todo!()
+        expr.cases_mut()
     }
 }
 
@@ -2157,7 +2158,9 @@ pub mod parse {
     use {
         super::*,
         core::{
-            iter::{empty, from_fn, FromIterator, Peekable},
+            fmt, hash,
+            iter::{empty, from_fn, FromIterator, FusedIterator, Peekable},
+            marker::PhantomData,
             result,
         },
     };
@@ -2223,6 +2226,39 @@ pub mod parse {
         Skip,
     }
 
+    /// [`Expression`] Completed Tokens
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+    pub enum Token<A> {
+        /// Group Open Token
+        GroupOpen,
+
+        /// Atom
+        Atom(A),
+
+        /// Group Close Token
+        GroupClose,
+    }
+
+    impl<A> Token<A> {
+        // TODO: add an `unwrap_atom` method
+
+        /// Returns `true` if `self` matches [`Self::Atom`].
+        #[inline]
+        pub fn is_atom(&self) -> bool {
+            matches!(self, Self::Atom(_))
+        }
+
+        /// Converts [`Token<A>`] into [`Option<A>`].
+        #[inline]
+        pub fn atom(self) -> Option<A> {
+            match self {
+                Self::Atom(atom) => Some(atom),
+                _ => None,
+            }
+        }
+    }
+
     /// [`Expression`] Parser Trait
     ///
     /// The parser [`Parser<T, E>`] can parse an [`Expression`] of type `E` from
@@ -2275,7 +2311,7 @@ pub mod parse {
             I: Iterator<Item = T>,
         {
             match iter.peek() {
-                Some(peek) => match self.classify(&peek) {
+                Some(peek) => match self.classify(peek) {
                     SymbolType::GroupClose => Err(Error::UnopenedGroup),
                     SymbolType::GroupOpen => self.parse_group_expression_continue(iter),
                     _ => self.parse_atom_expression_continue(iter),
@@ -2297,7 +2333,7 @@ pub mod parse {
         {
             let mut iter = iter.into_iter().peekable();
             if let Some(peek) = iter.peek() {
-                match self.classify(&peek) {
+                match self.classify(peek) {
                     SymbolType::Skip => return Err(Error::LeadingSkipSymbols),
                     SymbolType::GroupClose => return Err(Error::UnopenedGroup),
                     SymbolType::GroupOpen => return Err(Error::BadOpenGroup),
@@ -2435,6 +2471,25 @@ pub mod parse {
         {
             self.parse_group_continue(iter).map(E::from_group)
         }
+
+        /// Parses [`Expression Tokens`](Token) from an [`Iterator`] over `T`.
+        fn tokens<I>(&mut self, iter: I) -> Tokens<T, E, Self, I>
+        where
+            I: IntoIterator<Item = T>,
+        {
+            Tokens::new(self, iter)
+        }
+
+        /// Tries to parse [`Expression Tokens`](Token) from an [`Iterator`] over `T`.
+        fn tokens_continue<'i, I>(
+            &mut self,
+            iter: &'i mut Peekable<I>,
+        ) -> TokensContinue<'_, 'i, T, E, Self, I>
+        where
+            I: Iterator<Item = T>,
+        {
+            TokensContinue::new(self, iter)
+        }
     }
 
     fn parse_group_continue_impl<P, I, C, PA, E, AE>(
@@ -2452,7 +2507,7 @@ pub mod parse {
         E::Group: FromIterator<E>,
     {
         match iter.peek() {
-            Some(peek) => match classify(parser, &peek) {
+            Some(peek) => match classify(parser, peek) {
                 SymbolType::Skip => Err(Error::LeadingSkipSymbols),
                 SymbolType::GroupClose => Err(Error::UnopenedGroup),
                 SymbolType::GroupOpen => {
@@ -2488,7 +2543,7 @@ pub mod parse {
     {
         move || loop {
             match iter.peek() {
-                Some(peek) => match classify(parser, &peek) {
+                Some(peek) => match classify(parser, peek) {
                     SymbolType::Skip => {
                         let _ = iter.next();
                     }
@@ -2512,6 +2567,303 @@ pub mod parse {
                 _ => return Some(Err(Error::OpenGroup)),
             }
         }
+    }
+
+    /// [`Tokens`] Iterator Item
+    pub type TokensItem<E, AtomParseError> =
+        result::Result<Token<<E as Expression>::Atom>, AtomParseError>;
+
+    #[inline]
+    fn tokens_next<T, E, P, I>(
+        parser: &mut P,
+        iter: &mut Peekable<I>,
+    ) -> Option<TokensItem<E, P::AtomParseError>>
+    where
+        E: Expression,
+        P: Parser<T, E>,
+        I: Iterator<Item = T>,
+    {
+        loop {
+            match iter.peek() {
+                Some(peek) => match parser.classify(peek) {
+                    SymbolType::GroupOpen => {
+                        let _ = iter.next();
+                        return Some(Ok(Token::GroupOpen));
+                    }
+                    SymbolType::GroupClose => {
+                        let _ = iter.next();
+                        return Some(Ok(Token::GroupClose));
+                    }
+                    SymbolType::Skip => {
+                        let _ = iter.next();
+                        continue;
+                    }
+                    _ => return Some(parser.parse_atom_continue(iter).map(Token::Atom)),
+                },
+                _ => return None,
+            }
+        }
+    }
+
+    /// Token Iterator
+    ///
+    /// See the [`tokens`](Parser::tokens) method on [`Parser`].
+    pub struct Tokens<'p, T, E, P, I>
+    where
+        P: ?Sized,
+        I: IntoIterator,
+    {
+        parser: &'p mut P,
+        iter: Peekable<I::IntoIter>,
+        __: PhantomData<(T, E)>,
+    }
+
+    impl<'p, T, E, P, I> Tokens<'p, T, E, P, I>
+    where
+        P: ?Sized,
+        I: IntoIterator,
+    {
+        #[inline]
+        fn new(parser: &'p mut P, iter: I) -> Self {
+            Self {
+                parser,
+                iter: iter.into_iter().peekable(),
+                __: PhantomData,
+            }
+        }
+    }
+
+    impl<'p, T, E, P, I> Iterator for Tokens<'p, T, E, P, I>
+    where
+        E: Expression,
+        P: Parser<T, E>,
+        I: IntoIterator<Item = T>,
+    {
+        type Item = TokensItem<E, P::AtomParseError>;
+
+        #[inline]
+        fn next(&mut self) -> Option<Self::Item> {
+            tokens_next(self.parser, &mut self.iter)
+        }
+
+        #[inline]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            self.iter.size_hint()
+        }
+    }
+
+    impl<'p, T, E, P, I> FusedIterator for Tokens<'p, T, E, P, I>
+    where
+        E: Expression,
+        P: Parser<T, E>,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: FusedIterator,
+    {
+    }
+
+    /// Token Iterator
+    ///
+    /// See the [`tokens_continue`](Parser::tokens_continue) method on [`Parser`].
+    pub struct TokensContinue<'p, 'i, T, E, P, I>
+    where
+        P: ?Sized,
+        I: Iterator,
+    {
+        parser: &'p mut P,
+        iter: &'i mut Peekable<I>,
+        __: PhantomData<(T, E)>,
+    }
+
+    impl<'p, 'i, T, E, P, I> TokensContinue<'p, 'i, T, E, P, I>
+    where
+        P: ?Sized,
+        I: Iterator,
+    {
+        #[inline]
+        fn new(parser: &'p mut P, iter: &'i mut Peekable<I>) -> Self {
+            Self {
+                parser,
+                iter,
+                __: PhantomData,
+            }
+        }
+    }
+
+    impl<'p, 'i, T, E, P, I> Iterator for TokensContinue<'p, 'i, T, E, P, I>
+    where
+        E: Expression,
+        P: Parser<T, E>,
+        I: Iterator<Item = T>,
+    {
+        type Item = TokensItem<E, P::AtomParseError>;
+
+        #[inline]
+        fn next(&mut self) -> Option<Self::Item> {
+            tokens_next(self.parser, self.iter)
+        }
+
+        #[inline]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            self.iter.size_hint()
+        }
+    }
+
+    impl<'p, 'i, T, E, P, I> FusedIterator for TokensContinue<'p, 'i, T, E, P, I>
+    where
+        E: Expression,
+        P: Parser<T, E>,
+        I: FusedIterator<Item = T>,
+    {
+    }
+
+    /// [`Expression`] Parser from [`Iterator`]s over [`Token`]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    pub struct FromTokens<E>(PhantomData<E>)
+    where
+        E: Expression;
+
+    impl<E> FromTokens<E>
+    where
+        E: Expression,
+    {
+        /// Builds a new [`FromTokens`] parser.
+        #[inline]
+        pub fn new() -> Self {
+            Self(PhantomData)
+        }
+    }
+
+    impl<E> Clone for FromTokens<E>
+    where
+        E: Expression,
+    {
+        #[inline]
+        fn clone(&self) -> Self {
+            Self::new()
+        }
+    }
+
+    impl<E> Copy for FromTokens<E> where E: Expression {}
+
+    impl<E> fmt::Debug for FromTokens<E>
+    where
+        E: Expression,
+    {
+        #[inline]
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_tuple("FromTokens")
+                .field(&format_args!("_"))
+                .finish()
+        }
+    }
+
+    impl<E> Default for FromTokens<E>
+    where
+        E: Expression,
+    {
+        #[inline]
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl<E> Eq for FromTokens<E> where E: Expression {}
+
+    impl<E> hash::Hash for FromTokens<E>
+    where
+        E: Expression,
+    {
+        #[inline]
+        fn hash<H: hash::Hasher>(&self, state: &mut H) {
+            self.0.hash(state)
+        }
+    }
+
+    impl<E> PartialEq for FromTokens<E>
+    where
+        E: Expression,
+    {
+        #[inline]
+        fn eq(&self, other: &Self) -> bool {
+            self.0.eq(&other.0)
+        }
+    }
+
+    impl<E> Parser<Token<E::Atom>, E> for FromTokens<E>
+    where
+        E: Expression,
+    {
+        type AtomParseError = ();
+
+        #[inline]
+        fn classify(&mut self, term: &Token<E::Atom>) -> SymbolType {
+            match term {
+                Token::GroupOpen => SymbolType::GroupOpen,
+                Token::GroupClose => SymbolType::GroupClose,
+                _ => SymbolType::Read,
+            }
+        }
+
+        #[inline]
+        fn parse_atom_continue<I>(
+            &mut self,
+            iter: &mut Peekable<I>,
+        ) -> result::Result<E::Atom, Self::AtomParseError>
+        where
+            I: Iterator<Item = Token<E::Atom>>,
+        {
+            match iter.peek() {
+                Some(Token::Atom(_)) => Ok(iter.next().unwrap().atom().unwrap()),
+                _ => Err(()),
+            }
+        }
+    }
+
+    /// Parses an [`Expression`] from an iterator over tokens.
+    #[inline]
+    pub fn from_tokens<I, E>(iter: I) -> Result<E, ()>
+    where
+        I: IntoIterator<Item = Token<E::Atom>>,
+        E: Expression,
+        E::Group: FromIterator<E>,
+    {
+        FromTokens::default().parse(iter)
+    }
+
+    /// Parses an expression [`Group`](Expression::Group) from an iterator over tokens.
+    #[inline]
+    pub fn from_tokens_grouped<I, E>(iter: I) -> Result<E, ()>
+    where
+        I: IntoIterator<Item = Token<E::Atom>>,
+        E: Expression,
+        E::Group: FromIterator<E>,
+    {
+        // FIXME: avoid using "magic chars" here
+        // FIXME: why doesnt `parse_group` work?
+        from_tokens(
+            Some(Token::GroupOpen)
+                .into_iter()
+                .chain(iter)
+                .chain(Some(Token::GroupClose)),
+        )
+    }
+
+    /// Parses an expression [`Group`](Expression::Group) from an iterator over tokens.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parsing was a valid [`Expression`] but not a [`Group`](Expression::Group).
+    #[cfg(feature = "panic")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "panic")))]
+    #[inline]
+    #[track_caller]
+    pub fn from_tokens_as_group<I, E>(iter: I) -> Result<E::Group, ()>
+    where
+        I: IntoIterator<Item = Token<E::Atom>>,
+        E: Expression,
+        E::Group: FromIterator<E>,
+    {
+        from_tokens_grouped(iter).map(E::unwrap_group)
     }
 
     /// [`Expression`] Parser from [`Iterator`]s over [`char`]
@@ -2574,13 +2926,13 @@ pub mod parse {
             move || match iter.peek() {
                 Some(peek) => {
                     if *inside_quote {
-                        if self.is_quote(&peek) {
+                        if self.is_quote(peek) {
                             *inside_quote = false;
                         }
                     } else {
-                        match self.classify_char(&peek) {
+                        match self.classify_char(peek) {
                             SymbolType::Read => {
-                                if self.is_quote(&peek) {
+                                if self.is_quote(peek) {
                                     *inside_quote = true;
                                 }
                             }
@@ -2786,13 +3138,13 @@ pub mod parse {
             move || match iter.peek() {
                 Some(peek) => {
                     if *inside_quote {
-                        if self.is_quote(&peek) {
+                        if self.is_quote(peek) {
                             *inside_quote = false;
                         }
                     } else {
-                        match self.classify_string(&peek) {
+                        match self.classify_string(peek) {
                             SymbolType::Read => {
-                                if self.is_quote(&peek) {
+                                if self.is_quote(peek) {
                                     *inside_quote = true;
                                 }
                             }
@@ -3166,10 +3518,10 @@ pub mod shape {
     /// ```
     ///
     /// if it is impossible or inefficient to implement the stronger contract.
-    pub trait Shape<E>: Matcher<E>
+    pub trait Shape<E>:
+        Matcher<E> + Into<Expr<E>> + TryFrom<Expr<E>, Error = <Self as Matcher<E>>::Error>
     where
         E: Expression,
-        Self: Into<Expr<E>> + TryFrom<Expr<E>, Error = <Self as Matcher<E>>::Error>,
     {
         /// Parses an [`Atom`](Expression::Atom) into [`Self`].
         #[inline]
@@ -3189,6 +3541,15 @@ pub mod shape {
             expr.into().try_into()
         }
     }
+
+    /* TODO: should we have this?
+    impl<E, S> Shape<E> for S
+    where
+        E: Expression,
+        S: Matcher<E> + Into<Expr<E>> + TryFrom<Expr<E>, Error = <Self as Matcher<E>>::Error>,
+    {
+    }
+    */
 }
 
 /// Pattern Module
@@ -3310,14 +3671,10 @@ pub mod pattern {
         {
             match pattern.group_ref() {
                 Some(pattern_group) => {
-                    group
-                        .iter()
-                        .any(move |e| Self::matches(&pattern, e.cases()))
-                        || ExprRef::<P>::eq_groups::<E>(&pattern_group, &group)
+                    group.iter().any(move |e| Self::matches(pattern, e.cases()))
+                        || ExprRef::<P>::eq_groups::<E>(pattern_group, &group)
                 }
-                _ => group
-                    .iter()
-                    .any(move |e| Self::matches(&pattern, e.cases())),
+                _ => group.iter().any(move |e| Self::matches(pattern, e.cases())),
             }
         }
 
@@ -3851,6 +4208,10 @@ pub mod vec {
 #[cfg(feature = "buffered")]
 #[cfg_attr(docsrs, doc(cfg(feature = "buffered")))]
 pub mod buffered {
+
+    // TODO: implement a buffered expression for a string backing buffer: it should be the optimal
+    //       expression for going to and from strings for CLIs etc.
+
     use {super::*, alloc::vec::Vec};
 
     /// Buffered [`Expression`] Type
@@ -3861,21 +4222,25 @@ pub mod buffered {
         shape: Vec<ShapeIndex>,
     }
 
+    /// TODO: implement
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct ExprGroup<T> {
         inner: Expr<T>,
     }
 
+    /// TODO: implement
     pub struct ExprGroupReference<'e, T> {
-        _marker: core::marker::PhantomData<&'e T>,
+        __: core::marker::PhantomData<&'e T>,
     }
 
+    /// TODO: implement
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct ExprView<'t, T> {
         base: &'t Expr<T>,
         index: usize,
     }
 
+    /// TODO: implement
     pub struct ExprViewIterator<'t, T> {
         _base: &'t Expr<T>,
         index: usize,
