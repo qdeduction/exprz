@@ -3202,6 +3202,8 @@ pub mod parse {
     }
 
     /// Parses a string-like expression [`Group`](Expression::Group) from a string.
+    #[cfg(feature = "unicode")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unicode")))]
     #[inline]
     pub fn from_graphemes_as_group<'s, E>(s: &'s str) -> Result<E::Group, FromCharactersError>
     where
